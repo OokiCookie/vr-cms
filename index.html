@@ -8,7 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 <style>
 :root {
   --bg: #f2ede3;
@@ -550,24 +549,25 @@ select option { background: var(--card2); }
   .trainers-layout { grid-template-columns: 1fr; }
   .trainer-charts-row { grid-template-columns: 1fr; }
 }
-/* PDF EXPORT — hide UI controls and reflow layout for A4-friendly width */
-.pdf-rendering .pdf-hide { display: none !important; }
+/* PDF EXPORT — control print output */
+/* Sections deselected in the PDF settings modal get this class */
+.pdf-skip { display: none !important; }
 
-/* When rendering PDF, the dashboard content area is wider than A4.
-   Force single-column layout for chart rows so nothing gets cropped at the right edge.
-   Width ~1100px maps to A4 landscape minus margins at typical screen DPI. */
-.pdf-rendering #tab-dashboard,
-.pdf-rendering #trainerDetail {
-  max-width: 1100px;
+/* Native browser print: clean layout, hide app chrome */
+@media print {
+  /* Hide app chrome and other tabs */
+  .header, .nav, .tab-pane:not(.active),
+  .pdf-hide, .modal-overlay, #toast { display: none !important; }
+  /* Strip page chrome — print engine adds its own margins via @page */
+  body { background: #fff !important; }
+  .content { padding: 0 !important; }
+  /* Avoid splitting cards and chart blocks across pages */
+  .chart-card, .kpi-card, .table-wrap,
+  .trainer-section, [data-pdf-section] { break-inside: avoid; page-break-inside: avoid; }
+  /* Tables can wrap, but keep header attached */
+  thead { display: table-header-group; }
 }
-.pdf-rendering .charts-row,
-.pdf-rendering .charts-row2,
-.pdf-rendering .trainer-charts-row {
-  grid-template-columns: 1fr !important;
-}
-.pdf-rendering .kpi-row-top {
-  grid-template-columns: 1fr !important;
-}
+/* @page rule is set dynamically via <style id="pdfPageStyle"> when user picks orientation */
 </style>
 </head>
 <body>
@@ -1069,7 +1069,7 @@ select option { background: var(--card2); }
 <div class="modal-overlay" id="pdfModalOverlay">
   <div class="modal" style="width:540px">
     <h2>📄 Экспорт в PDF</h2>
-    <p style="margin-bottom:14px">Выберите ориентацию страницы и содержимое для экспорта.</p>
+    <p style="margin-bottom:14px">Выберите ориентацию страницы и содержимое. Откроется диалог печати браузера — там выберите <strong>«Сохранить как PDF»</strong> в качестве принтера.</p>
 
     <div class="form-group" style="margin-bottom:18px">
       <label>Ориентация</label>
@@ -1090,7 +1090,7 @@ select option { background: var(--card2); }
 
     <div class="modal-actions" style="margin-top:22px">
       <button class="btn btn-secondary" onclick="closePDFModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="confirmPDFExport()">⬇ Скачать PDF</button>
+      <button class="btn btn-primary" onclick="confirmPDFExport()">🖨 Открыть печать</button>
     </div>
   </div>
 </div>
@@ -1602,10 +1602,11 @@ function renderHTMLBarChart(containerId, labels, data, color) {
 }
 
 // Pure SVG donut chart with side legend.
-// Used instead of Chart.js for donuts because html2canvas (used by html2pdf)
-// does not reliably copy Chart.js canvas pixel buffers when multiple canvases
-// share a CSS grid row — second canvas often comes out blank in the PDF.
-// SVG renders perfectly in html2canvas without any of these issues.
+// Originally introduced as an alternative to Chart.js donut because html2canvas
+// (used by html2pdf) had trouble copying canvas pixel buffers when multiple
+// canvases shared a CSS grid row. We've since switched to native browser print,
+// which renders Chart.js fine — but SVG works equally well and the simpler
+// implementation is worth keeping.
 function renderSVGDonut(containerId, labels, data) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -2955,14 +2956,19 @@ function resetTrainerFilters() {
 }
 
 // ============================================================
-// PDF EXPORT (html2pdf.js) + SETTINGS MODAL
+// PDF EXPORT — native browser print dialog
+//
+// We use window.print() instead of html2pdf/html2canvas because the latter has
+// long-standing bugs rendering Chart.js canvases and inline SVG. The browser's
+// native print engine renders both perfectly and gives the user a real preview
+// with pagination. Tradeoff: user must pick "Save as PDF" in the print dialog
+// instead of getting a direct download.
 // ============================================================
 let currentPDFTarget = null; // 'dashboard' or 'trainer'
 
 // Build the modal: scan target container for elements with data-pdf-section,
 // create a checkbox for each. Sections with data-pdf-default="off" are unchecked.
 function openPDFModal(target) {
-  if (!window.html2pdf) { toast('html2pdf не загружен — проверьте интернет', 'error'); return; }
   if (target === 'trainer' && !selectedTrainer) { toast('Сначала выберите тренера', 'error'); return; }
   currentPDFTarget = target;
 
@@ -2992,8 +2998,9 @@ function closePDFModal() {
   document.getElementById('pdfModalOverlay').classList.remove('open');
 }
 
-// Read settings from modal, hide unchecked sections, render PDF, restore visibility.
-async function confirmPDFExport() {
+// Read settings, hide unchecked sections, set @page orientation, call window.print(),
+// then restore everything once print dialog closes.
+function confirmPDFExport() {
   const orient = document.querySelector('input[name="pdfOrient"]:checked').value;
   const checks = document.querySelectorAll('#pdfSectionsBox input[type="checkbox"]');
   const enabled = new Set();
@@ -3005,126 +3012,36 @@ async function confirmPDFExport() {
     ? document.getElementById('tab-dashboard')
     : document.getElementById('trainerDetail');
 
-  // Hide sections that are unchecked. Save originals so we can restore.
-  const hidden = [];
+  // Hide deselected sections via class (so they're invisible to print engine too)
+  const skipped = [];
   root.querySelectorAll('[data-pdf-section]').forEach(el => {
     const id = el.getAttribute('data-pdf-section');
     if (!enabled.has(id)) {
-      hidden.push([el, el.style.display]);
-      el.style.display = 'none';
+      el.classList.add('pdf-skip');
+      skipped.push(el);
     }
   });
 
-  document.body.classList.add('pdf-rendering');
-  toast('Готовим PDF…', 'success');
-
-  // Wait for layout to reflow after hiding sections
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-  // -------------------------------------------------------------------
-  // CANVAS SIZE LOCK — the actual fix for the missing donut chart.
-  //
-  // Problem: html2canvas clones the DOM into a hidden iframe to render it.
-  // Chart.js charts are responsive — when their container's computed size
-  // changes (or is undefined in the clone), they collapse. Donut charts with
-  // aspectRatio: 1 collapse to 0×0 if their grid cell has indeterminate
-  // height in the clone, and disappear from the PDF entirely.
-  //
-  // Fix: before rendering, freeze each canvas's current pixel size as inline
-  // CSS. This way the clone preserves the exact rendered dimensions
-  // regardless of layout recalculation. Also disable Chart.js responsive
-  // mode temporarily so it doesn't try to resize during the clone.
-  // -------------------------------------------------------------------
-  const lockedCanvases = [];
-  root.querySelectorAll('canvas').forEach(canvas => {
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    lockedCanvases.push({
-      el: canvas,
-      origStyle: canvas.getAttribute('style') || ''
-    });
-    canvas.style.width  = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-  });
-
-  // Also lock chart-card heights so the grid doesn't collapse rows in the clone
-  const lockedCards = [];
-  root.querySelectorAll('.chart-card').forEach(card => {
-    const rect = card.getBoundingClientRect();
-    if (rect.height === 0) return;
-    lockedCards.push({
-      el: card,
-      origStyle: card.getAttribute('style') || ''
-    });
-    card.style.minHeight = rect.height + 'px';
-  });
-
-  // Force Chart.js redraw at the now-fixed canvas sizes
-  Object.values(charts).forEach(c => { try { c.resize(); } catch {} });
-  Object.values(trainerCharts).forEach(c => { try { c.resize(); } catch {} });
-  await new Promise(r => setTimeout(r, 250));
-
-  const dt = new Date().toISOString().slice(0,10);
-  let filename;
-  if (currentPDFTarget === 'dashboard') filename = `Дашборд_VR_${dt}.pdf`;
-  else {
-    const safeName = (selectedTrainer||'').replace(/[^а-яА-Яa-zA-Z0-9 ]/g, '_').trim();
-    filename = `Тренер_${safeName}_${dt}.pdf`;
+  // Inject @page rule for orientation. The print dialog respects this as the
+  // default but the user can still change it manually if they want.
+  let pageStyle = document.getElementById('pdfPageStyle');
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'pdfPageStyle';
+    document.head.appendChild(pageStyle);
   }
+  pageStyle.textContent = `@page { size: A4 ${orient}; margin: 10mm; }`;
 
-  const opts = {
-    margin:       [10, 10, 10, 10],
-    filename:     filename,
-    image:        { type: 'jpeg', quality: 0.95 },
-    html2canvas:  {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      // Belt-and-braces: re-enforce canvas sizes inside the cloned DOM too,
-      // in case the clone's computed style differs from ours.
-      onclone: (clonedDoc) => {
-        clonedDoc.querySelectorAll('canvas').forEach(canvas => {
-          // Find the original canvas by id and copy its rendered size
-          const orig = canvas.id ? document.getElementById(canvas.id) : null;
-          if (orig) {
-            const r = orig.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) {
-              canvas.style.width  = r.width + 'px';
-              canvas.style.height = r.height + 'px';
-              canvas.width  = r.width  * 2; // match scale
-              canvas.height = r.height * 2;
-              const ctx = canvas.getContext('2d');
-              if (ctx && orig.getContext) {
-                ctx.drawImage(orig, 0, 0, canvas.width, canvas.height);
-              }
-            }
-          }
-        });
-      }
-    },
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: orient },
-    pagebreak:    { mode: ['css', 'legacy'] }
+  // Restore once the print dialog closes (afterprint fires whether user saved or cancelled)
+  const cleanup = () => {
+    skipped.forEach(el => el.classList.remove('pdf-skip'));
+    if (pageStyle) pageStyle.textContent = '';
+    window.removeEventListener('afterprint', cleanup);
   };
+  window.addEventListener('afterprint', cleanup);
 
-  try {
-    await html2pdf().set(opts).from(root).save();
-    toast('PDF скачан', 'success');
-  } catch(err) {
-    console.error('PDF error:', err);
-    toast('Ошибка PDF: ' + err.message, 'error');
-  } finally {
-    // Restore everything we modified
-    hidden.forEach(([el, orig]) => { el.style.display = orig; });
-    lockedCanvases.forEach(({ el, origStyle }) => { el.setAttribute('style', origStyle); });
-    lockedCards.forEach(({ el, origStyle }) => { el.setAttribute('style', origStyle); });
-    document.body.classList.remove('pdf-rendering');
-    // Trigger Chart.js to redraw at natural sizes again
-    setTimeout(() => {
-      Object.values(charts).forEach(c => { try { c.resize(); } catch {} });
-      Object.values(trainerCharts).forEach(c => { try { c.resize(); } catch {} });
-    }, 100);
-  }
+  // Small delay so layout reflows after pdf-skip is applied, then open print dialog
+  setTimeout(() => window.print(), 50);
 }
 
 // Close PDF modal on backdrop click
