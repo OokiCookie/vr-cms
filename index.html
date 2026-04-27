@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 <style>
 :root {
   --bg: #f2ede3;
@@ -476,6 +477,81 @@ select option { background: var(--card2); }
   background: #3a2a10; color: #fbbf24;
   font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700;
 }
+/* TRAINERS PAGE */
+.trainers-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.trainers-list {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+.trainer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.trainer-row:hover { background: var(--card2); }
+.trainer-row.active { background: #dbeafe; border-left: 3px solid var(--blue); padding-left: 11px; }
+.trainer-row:last-child { border-bottom: none; }
+.trainer-row-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.trainer-row-count {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--text3); background: var(--card2);
+  padding: 2px 8px; border-radius: 10px;
+}
+.trainer-row.active .trainer-row-count { background: #fff; color: var(--blue); }
+.trainer-detail {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.trainer-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
+}
+.trainer-name { font-size: 22px; font-weight: 700; color: var(--text); }
+.trainer-stats {
+  display: flex; gap: 12px; margin-top: 8px;
+}
+.trainer-stat {
+  background: var(--card2); padding: 6px 12px; border-radius: var(--radius2);
+  font-size: 12px; color: var(--text2);
+}
+.trainer-stat strong { font-family: var(--mono); color: var(--text); margin-left: 4px; }
+.trainer-filters {
+  display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap;
+  padding: 12px; background: var(--card2); border-radius: var(--radius2);
+}
+.trainer-section {
+  margin-top: 22px;
+}
+.trainer-section-title {
+  font-size: 12px; font-weight: 700; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 12px;
+}
+.trainer-charts-row {
+  display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 18px;
+}
+@media (max-width: 900px) {
+  .trainers-layout { grid-template-columns: 1fr; }
+  .trainer-charts-row { grid-template-columns: 1fr; }
+}
+/* PDF EXPORT — hide UI controls during PDF rendering */
+.pdf-rendering .pdf-hide { display: none !important; }
 </style>
 </head>
 <body>
@@ -517,6 +593,9 @@ select option { background: var(--card2); }
   <div class="nav-tab" onclick="switchTab('refs', this)">
     🗂 Справочники
   </div>
+  <div class="nav-tab" onclick="switchTab('trainers', this)">
+    👨‍🏫 Тренеры <span class="tab-count" id="trainersCount">0</span>
+  </div>
   <div class="nav-tab" onclick="switchTab('trash', this)">
     🗑 Корзина <span class="tab-count" id="trashCount">0</span>
   </div>
@@ -530,6 +609,10 @@ select option { background: var(--card2); }
 
   <!-- DASHBOARD TAB -->
   <div class="tab-pane active" id="tab-dashboard">
+    <div class="section-header pdf-hide" style="margin-bottom:16px">
+      <div></div>
+      <button class="btn btn-secondary btn-sm" onclick="exportDashboardPDF()">📄 Экспорт в PDF</button>
+    </div>
     <div id="noDataMsg" class="alert alert-info" style="display:none">
       ℹ️ Нет данных. Откройте существующую базу или создайте новую, затем добавьте записи через «Ввод данных».
     </div>
@@ -788,6 +871,25 @@ select option { background: var(--card2); }
           </thead>
           <tbody id="refEntBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRAINERS TAB -->
+  <div class="tab-pane" id="tab-trainers">
+    <div class="section-header">
+      <div class="section-title">Тренеры</div>
+    </div>
+    <div class="trainers-layout">
+      <div class="trainers-list" id="trainersList">
+        <!-- list of trainer rows, populated by renderTrainersList() -->
+      </div>
+      <div class="trainer-detail" id="trainerDetail">
+        <div class="empty-state" style="padding:80px 20px">
+          <div class="empty-icon">👈</div>
+          <strong>Выберите тренера</strong>
+          <p>Кликните на имя в списке слева, чтобы увидеть карточку</p>
+        </div>
       </div>
     </div>
   </div>
@@ -1354,10 +1456,15 @@ function refreshAll() {
   const trashed = db.records.filter(r => r.deleted);
   document.getElementById('journalCount').textContent = active.length;
   document.getElementById('trashCount').textContent = trashed.length;
+  document.getElementById('trainersCount').textContent = getAllTrainers().length;
   const noData = active.length === 0;
   document.getElementById('noDataMsg').style.display = noData ? 'flex' : 'none';
-  // Refresh trash view if it's currently visible
+  // Refresh trash/trainers views if they are currently visible
   if (document.getElementById('tab-trash').classList.contains('active')) renderTrash();
+  if (document.getElementById('tab-trainers').classList.contains('active')) {
+    renderTrainersList();
+    if (selectedTrainer) refreshTrainerData();
+  }
 }
 
 function updateKPIs() {
@@ -2146,6 +2253,7 @@ function switchTab(name, el) {
   el.classList.add('active');
   if (name === 'journal') filterRecords();
   if (name === 'refs') renderRefs();
+  if (name === 'trainers') renderTrainersList();
   if (name === 'trash') renderTrash();
   if (name === 'history') loadHistory();
 }
@@ -2550,6 +2658,248 @@ function renderHistory() {
       <td>${e.summary||'—'}</td>
     </tr>`;
   }).join('');
+}
+
+// ============================================================
+// ТРЕНЕРЫ (Trainers / Instructors page)
+// ============================================================
+let selectedTrainer = null;       // currently displayed trainer name
+let trainerCharts = {};           // Chart.js instances for trainer page
+
+// Build sorted list of all trainers: those with records (count > 0) first by count desc,
+// then those without records (from db.instructors / REF.instructors) alphabetically.
+function getAllTrainers() {
+  const counts = {};
+  activeRecords().forEach(r => {
+    const name = (r.instructor||'').trim();
+    if (name) counts[name] = (counts[name]||0) + 1;
+  });
+  // Add trainers from custom + REF lists even if they have no records
+  const fromLists = new Set([...(db.instructors||[]), ...REF.instructors]);
+  fromLists.forEach(n => { if (n && !(n in counts)) counts[n] = 0; });
+  return Object.entries(counts)
+    .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
+}
+
+function renderTrainersList() {
+  const trainers = getAllTrainers();
+  document.getElementById('trainersCount').textContent = trainers.length;
+  const list = document.getElementById('trainersList');
+  if (!trainers.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:30px 20px"><p>Нет тренеров</p></div>';
+    return;
+  }
+  list.innerHTML = trainers.map(([name, cnt]) => {
+    const safe = name.replace(/'/g, "\\'");
+    const isActive = name === selectedTrainer ? 'active' : '';
+    return `<div class="trainer-row ${isActive}" onclick="selectTrainer('${safe}')">
+      <span class="trainer-row-name">${name}</span>
+      <span class="trainer-row-count">${cnt}</span>
+    </div>`;
+  }).join('');
+}
+
+function selectTrainer(name) {
+  selectedTrainer = name;
+  renderTrainersList();
+  renderTrainerDetail();
+}
+
+function renderTrainerDetail() {
+  const detail = document.getElementById('trainerDetail');
+  if (!selectedTrainer) return;
+
+  // Build filter options based on this trainer's records
+  const allTrainerRecs = activeRecords().filter(r => (r.instructor||'').trim() === selectedTrainer);
+  const enterprises = [...new Set(allTrainerRecs.map(r => r.enterprise).filter(Boolean))].sort();
+
+  // Render shell with filters; data goes in next call
+  detail.innerHTML = `
+    <div class="trainer-header">
+      <div>
+        <div class="trainer-name">${selectedTrainer}</div>
+        <div class="trainer-stats">
+          <div class="trainer-stat">Всего обучений: <strong id="t_totalCount">—</strong></div>
+        </div>
+      </div>
+      <button class="btn btn-secondary pdf-hide" onclick="exportTrainerPDF()">📄 Экспорт в PDF</button>
+    </div>
+
+    <div class="trainer-filters pdf-hide">
+      <div class="form-group" style="flex:1;min-width:140px">
+        <label>С даты</label>
+        <input type="date" id="t_dateFrom" onchange="refreshTrainerData()">
+      </div>
+      <div class="form-group" style="flex:1;min-width:140px">
+        <label>По дату</label>
+        <input type="date" id="t_dateTo" onchange="refreshTrainerData()">
+      </div>
+      <div class="form-group" style="flex:1;min-width:160px">
+        <label>Предприятие</label>
+        <select id="t_enterprise" onchange="refreshTrainerData()" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:9px 12px;font-size:13px;font-family:var(--sans);outline:none">
+          <option value="">Все предприятия</option>
+          ${enterprises.map(e => `<option value="${e.replace(/"/g,'&quot;')}">${e}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end" onclick="resetTrainerFilters()">✕ Сброс</button>
+    </div>
+
+    <div class="trainer-charts-row">
+      <div>
+        <div class="trainer-section-title">Обучено по месяцам</div>
+        <canvas id="t_chartMonths"></canvas>
+      </div>
+      <div>
+        <div class="trainer-section-title">По предприятиям</div>
+        <canvas id="t_chartEnterprises"></canvas>
+      </div>
+    </div>
+
+    <div class="trainer-section">
+      <div class="trainer-section-title">Топ курсов</div>
+      <div id="t_topCourses"></div>
+    </div>
+
+    <div class="trainer-section">
+      <div class="trainer-section-title">Последние обучения</div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Дата</th><th>Предприятие</th><th>Таб. №</th><th>ФИО</th><th>Курс</th><th>%</th></tr>
+          </thead>
+          <tbody id="t_recentBody"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  refreshTrainerData();
+}
+
+// Apply trainer filters and re-render charts/tables. Doesn't re-render the shell.
+function refreshTrainerData() {
+  if (!selectedTrainer) return;
+
+  const dateFrom  = document.getElementById('t_dateFrom')?.value || '';
+  const dateTo    = document.getElementById('t_dateTo')?.value || '';
+  const entFilter = document.getElementById('t_enterprise')?.value || '';
+
+  const recs = activeRecords().filter(r => {
+    if ((r.instructor||'').trim() !== selectedTrainer) return false;
+    if (dateFrom && (!r.date || r.date < dateFrom)) return false;
+    if (dateTo && (!r.date || r.date > dateTo)) return false;
+    if (entFilter && r.enterprise !== entFilter) return false;
+    return true;
+  });
+
+  document.getElementById('t_totalCount').textContent = recs.length;
+
+  // Months chart
+  const monthCounts = {};
+  MONTHS.forEach(m => monthCounts[m] = 0);
+  recs.forEach(r => { if (r.month) monthCounts[r.month] = (monthCounts[r.month]||0)+1; });
+  if (trainerCharts.months) trainerCharts.months.destroy();
+  const monthsCtx = document.getElementById('t_chartMonths')?.getContext('2d');
+  if (monthsCtx) {
+    trainerCharts.months = new Chart(monthsCtx, {
+      type: 'bar',
+      data: { labels: MONTHS, datasets: [{ data: MONTHS.map(m=>monthCounts[m]), backgroundColor: '#1a6ef5cc', borderColor: '#1a6ef5', borderWidth: 1, borderRadius: 4 }] },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { size: 10 } } },
+          y: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } }
+        },
+        responsive: true, maintainAspectRatio: true
+      }
+    });
+  }
+
+  // Enterprises donut
+  const entCounts = {};
+  recs.forEach(r => { if (r.enterprise) entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
+  const entSorted = Object.entries(entCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  if (trainerCharts.enterprises) trainerCharts.enterprises.destroy();
+  const entCtx = document.getElementById('t_chartEnterprises')?.getContext('2d');
+  if (entCtx) {
+    const colors = ['#1a6ef5','#06b6d4','#f5a623','#22c55e','#f43f5e','#a855f7','#f97316','#84cc16'];
+    trainerCharts.enterprises = new Chart(entCtx, {
+      type: 'doughnut',
+      data: { labels: entSorted.map(e=>e[0]), datasets: [{ data: entSorted.map(e=>e[1]), backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }] },
+      options: {
+        plugins: { legend: { position: 'right', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 11 }, padding: 8, boxWidth: 12 } } },
+        responsive: true, maintainAspectRatio: true
+      }
+    });
+  }
+
+  // Top courses (HTML/CSS bars)
+  const coCounts = {};
+  recs.forEach(r => { const c = (r.course||'').trim(); if (c) coCounts[c] = (coCounts[c]||0)+1; });
+  const coSorted = Object.entries(coCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  renderHTMLBarChart('t_topCourses', coSorted.map(e=>e[0]), coSorted.map(e=>e[1]), '#0b8a94');
+
+  // Recent records (last 30)
+  const recent = [...recs].reverse().slice(0, 30);
+  const tbody = document.getElementById('t_recentBody');
+  if (!recent.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет записей</td></tr>';
+  } else {
+    tbody.innerHTML = recent.map(r => `<tr>
+      <td class="mono">${formatDate(r.date)}</td>
+      <td>${r.enterprise||'—'}</td>
+      <td class="mono">${r.tabNumber||'—'}</td>
+      <td>${r.fullName||'—'}</td>
+      <td>${r.course||'—'}</td>
+      <td><span class="badge ${(r.completion||0)>=80?'badge-green':(r.completion||0)>=60?'badge-gold':'badge-red'}">${r.completion||0}%</span></td>
+    </tr>`).join('');
+  }
+}
+
+function resetTrainerFilters() {
+  if (document.getElementById('t_dateFrom'))   document.getElementById('t_dateFrom').value = '';
+  if (document.getElementById('t_dateTo'))     document.getElementById('t_dateTo').value = '';
+  if (document.getElementById('t_enterprise')) document.getElementById('t_enterprise').value = '';
+  refreshTrainerData();
+}
+
+// ============================================================
+// PDF EXPORT (html2pdf.js)
+// ============================================================
+function exportPDF(elementId, filename) {
+  if (!window.html2pdf) { toast('html2pdf не загружен — проверьте интернет', 'error'); return; }
+  const el = document.getElementById(elementId);
+  if (!el) { toast('Не найден элемент для экспорта', 'error'); return; }
+  // Hide PDF-only-hidden controls during render
+  document.body.classList.add('pdf-rendering');
+  toast('Готовим PDF…', 'success');
+  const opts = {
+    margin:       [10, 10, 10, 10], // mm
+    filename:     filename,
+    image:        { type: 'jpeg', quality: 0.95 },
+    html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak:    { mode: ['css', 'legacy'] }
+  };
+  html2pdf().set(opts).from(el).save()
+    .then(() => { document.body.classList.remove('pdf-rendering'); toast('PDF скачан', 'success'); })
+    .catch(err => {
+      document.body.classList.remove('pdf-rendering');
+      console.error('PDF error:', err);
+      toast('Ошибка PDF: ' + err.message, 'error');
+    });
+}
+
+function exportDashboardPDF() {
+  const dt = new Date().toISOString().slice(0,10);
+  exportPDF('tab-dashboard', `Дашборд_VR_${dt}.pdf`);
+}
+
+function exportTrainerPDF() {
+  if (!selectedTrainer) { toast('Сначала выберите тренера', 'error'); return; }
+  const dt = new Date().toISOString().slice(0,10);
+  const safeName = selectedTrainer.replace(/[^а-яА-Яa-zA-Z0-9 ]/g, '_').trim();
+  exportPDF('trainerDetail', `Тренер_${safeName}_${dt}.pdf`);
 }
 
 // ============================================================
