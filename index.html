@@ -550,8 +550,24 @@ select option { background: var(--card2); }
   .trainers-layout { grid-template-columns: 1fr; }
   .trainer-charts-row { grid-template-columns: 1fr; }
 }
-/* PDF EXPORT — hide UI controls during PDF rendering */
+/* PDF EXPORT — hide UI controls and reflow layout for A4-friendly width */
 .pdf-rendering .pdf-hide { display: none !important; }
+
+/* When rendering PDF, the dashboard content area is wider than A4.
+   Force single-column layout for chart rows so nothing gets cropped at the right edge.
+   Width ~1100px maps to A4 landscape minus margins at typical screen DPI. */
+.pdf-rendering #tab-dashboard,
+.pdf-rendering #trainerDetail {
+  max-width: 1100px;
+}
+.pdf-rendering .charts-row,
+.pdf-rendering .charts-row2,
+.pdf-rendering .trainer-charts-row {
+  grid-template-columns: 1fr !important;
+}
+.pdf-rendering .kpi-row-top {
+  grid-template-columns: 1fr !important;
+}
 </style>
 </head>
 <body>
