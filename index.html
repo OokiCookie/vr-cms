@@ -604,7 +604,7 @@ select option { background: var(--card2); }
         </div>
         <div class="form-group">
           <label>Табельный номер *</label>
-          <input type="text" id="f_tab" placeholder="20436482" oninput="checkDuplicate()">
+          <input type="text" id="f_tab" placeholder="20436482" inputmode="numeric" pattern="[0-9]*" oninput="this.value=this.value.replace(/\D/g,''); checkDuplicate()">
         </div>
         <div class="form-group">
           <label>ФИО *</label>
@@ -672,6 +672,17 @@ select option { background: var(--card2); }
       <div class="search-wrap">
         <span class="search-icon">🔍</span>
         <input type="text" id="searchInput" placeholder="Поиск по ФИО, табельному, курсу..." oninput="filterRecords()">
+      </div>
+      <!-- Date filter: single date by default, toggle to range -->
+      <div id="dateFilterSingle" style="display:flex;gap:6px;align-items:center">
+        <input type="date" class="filter-select" id="filterDate" onchange="filterRecords()" style="min-width:150px" title="Фильтр по дате">
+        <button class="btn btn-secondary btn-sm" onclick="toggleDateRange(true)" title="Диапазон дат">📅 Диапазон</button>
+      </div>
+      <div id="dateFilterRange" style="display:none;gap:6px;align-items:center">
+        <input type="date" class="filter-select" id="filterDateFrom" onchange="filterRecords()" style="min-width:140px" title="С">
+        <span style="color:var(--text3);font-size:12px">—</span>
+        <input type="date" class="filter-select" id="filterDateTo" onchange="filterRecords()" style="min-width:140px" title="По">
+        <button class="btn btn-secondary btn-sm" onclick="toggleDateRange(false)" title="Одна дата">✕</button>
       </div>
       <select class="filter-select" id="filterMonth" onchange="filterRecords()">
         <option value="">Все месяцы</option>
@@ -1208,9 +1219,11 @@ function getSelectedMonth() {
 }
 
 function clearForm() {
-  ['f_date','f_tab','f_name','f_position','f_course','f_completion','f_instructor']
+  // Note: f_date is excluded — we reset it to today below, not to empty
+  ['f_tab','f_name','f_position','f_course','f_completion','f_instructor']
     .forEach(id => document.getElementById(id).value = '');
   document.getElementById('f_enterprise').value = '';
+  document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
   document.getElementById('dupWarning').style.display = 'none';
 }
 
@@ -1499,7 +1512,16 @@ function filterRecords() {
   const course = document.getElementById('filterCourse').value;
   const instructor = document.getElementById('filterInstructor')?.value || '';
 
+  // Date filter — single date OR range (only one is active at a time, controlled by visibility)
+  const rangeMode = document.getElementById('dateFilterRange').style.display !== 'none';
+  const dateExact = !rangeMode ? document.getElementById('filterDate').value : '';
+  const dateFrom  =  rangeMode ? document.getElementById('filterDateFrom').value : '';
+  const dateTo    =  rangeMode ? document.getElementById('filterDateTo').value   : '';
+
   filteredRecords = db.records.filter(r => {
+    if (dateExact && r.date !== dateExact) return false;
+    if (dateFrom && (!r.date || r.date < dateFrom)) return false;
+    if (dateTo && (!r.date || r.date > dateTo)) return false;
     if (month && r.month !== month) return false;
     if (enterprise && r.enterprise !== enterprise) return false;
     if (course && r.course !== course) return false;
@@ -1588,8 +1610,30 @@ function resetFilters() {
   document.getElementById('filterMonth').value = '';
   document.getElementById('filterEnterprise').value = '';
   document.getElementById('filterCourse').value = '';
+  document.getElementById('filterDate').value = '';
+  document.getElementById('filterDateFrom').value = '';
+  document.getElementById('filterDateTo').value = '';
   const fi = document.getElementById('filterInstructor');
   if (fi) fi.value = '';
+  toggleDateRange(false); // collapse range mode back to single
+  filterRecords();
+}
+
+// Switch date filter between single-date and range modes.
+// When switching, clear the values of the mode being hidden so they don't ghost the filter.
+function toggleDateRange(useRange) {
+  const single = document.getElementById('dateFilterSingle');
+  const range  = document.getElementById('dateFilterRange');
+  if (useRange) {
+    document.getElementById('filterDate').value = '';
+    single.style.display = 'none';
+    range.style.display  = 'flex';
+  } else {
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value   = '';
+    range.style.display  = 'none';
+    single.style.display = 'flex';
+  }
   filterRecords();
 }
 
@@ -1880,7 +1924,7 @@ function importExcel(event) {
           if (!row || row.every(c => c === '' || c === null || c === undefined)) continue;
 
           const name  = get(row, 'name');
-          const tab   = get(row, 'tab');
+          const tab   = get(row, 'tab').replace(/\D/g, ''); // digits only
           const course = get(row, 'course');
 
           // Skip rows without essential data
