@@ -870,7 +870,13 @@ const DB_ROW_ID = 1; // ID единственной строки в таблиц
 // STATE
 // ============================================================
 let db = { version: '1.0', lastModified: null, records: [] };
+let baseSnapshot = null;     // snapshot of db at last load/save — used to compute our changes during merge
 let isDirty = false;
+let isSaving = false;        // prevents concurrent saves (e.g. autosave timer firing during manual save)
+let autosaveTimer = null;    // debounce timer for autosave
+let pollTimer = null;        // background poll timer
+const AUTOSAVE_DELAY = 3000; // ms — wait this long after last change before autosaving
+const POLL_INTERVAL = 30000; // ms — how often to check cloud for updates from others
 let filteredRecords = [];
 let currentPage = 1;
 const PAGE_SIZE = 30;
@@ -907,7 +913,7 @@ const MONTHS = ['Январь','Февраль','Март','Апрель','Ма�
                  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 
 // ============================================================
-// SUPABASE CLOUD STORAGE
+// SUPABASE CLOUD STORAGE + SMART MERGE + AUTOSAVE + BACKGROUND POLL
 // ============================================================
 const SB_HEADERS = {
   'apikey': SUPABASE_KEY,
@@ -915,27 +921,32 @@ const SB_HEADERS = {
   'Content-Type': 'application/json'
 };
 
-// Load DB state from Supabase. Called automatically on page load and on manual refresh.
+// Deep clone via JSON. Used to snapshot db state.
+function cloneDB(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+// Fetch latest db from cloud. Returns parsed db object or null on error.
+async function fetchCloudDB() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/db_state?id=eq.${DB_ROW_ID}&select=data`,
+    { headers: SB_HEADERS }
+  );
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+  const rows = await res.json();
+  if (!rows.length) return { version: '1.0', lastModified: null, records: [] };
+  const data = rows[0].data || { version: '1.0', lastModified: null, records: [] };
+  if (!data.records) data.records = [];
+  return data;
+}
+
+// Load DB state from Supabase. Called on page load and on manual refresh.
 async function loadDB() {
   setFileStatus('yellow', '⏳ Загрузка из облака…');
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/db_state?id=eq.${DB_ROW_ID}&select=data`,
-      { headers: SB_HEADERS }
-    );
-    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
-    const rows = await res.json();
-    if (!rows.length) {
-      // First run — row doesn't exist yet, will be created on first save
-      db = { version: '1.0', lastModified: null, records: [] };
-      setFileStatus('green', '☁ Облако (пустая база)');
-    } else {
-      db = rows[0].data || { version: '1.0', lastModified: null, records: [] };
-      if (!db.records) db.records = [];
-      setFileStatus('green', '☁ Облако подключено');
-    }
-    document.getElementById('saveBtn').disabled = false;
+    db = await fetchCloudDB();
+    baseSnapshot = cloneDB(db);
     isDirty = false;
+    setFileStatus('green', '☁ Сохранено');
+    document.getElementById('saveBtn').disabled = true;
     refreshAll();
     return true;
   } catch(e) {
@@ -947,42 +958,156 @@ async function loadDB() {
   }
 }
 
-// Save DB state to Supabase. Uses upsert: creates row if it doesn't exist, updates otherwise.
-async function saveDB() {
+// Smart merge: combine cloud version with our local changes since baseSnapshot.
+// Strategy:
+//   - records: 3-way merge by id. Detect what we added/updated/deleted vs base, apply atop cloud.
+//     For records updated on both sides — last-write-wins (our version).
+//   - customCourses, customEnterprises, instructors: union of arrays (no concept of "delete on one side"
+//     since we can't distinguish "deleted by us" from "added by them"). Renaming via Refs tab also rewrites
+//     records, so additions/removals in custom lists are mostly additive in practice.
+//   - Other top-level fields: prefer our version.
+function mergeDB(cloud, base, ours) {
+  if (!base) return cloneDB(ours); // first save — nothing to merge against
+
+  // ---- Records merge by id ----
+  const baseById  = new Map((base.records  || []).map(r => [r.id, r]));
+  const cloudById = new Map((cloud.records || []).map(r => [r.id, r]));
+  const oursById  = new Map((ours.records  || []).map(r => [r.id, r]));
+
+  // Records we deleted = in base, not in ours
+  const ourDeletes = new Set();
+  for (const id of baseById.keys()) if (!oursById.has(id)) ourDeletes.add(id);
+
+  // Records we added or modified = in ours, AND (not in base OR different from base)
+  const ourMutations = new Map();
+  for (const [id, r] of oursById) {
+    const baseR = baseById.get(id);
+    if (!baseR || JSON.stringify(baseR) !== JSON.stringify(r)) ourMutations.set(id, r);
+  }
+
+  // Start from cloud, apply our deletes, then our mutations
+  const merged = new Map(cloudById);
+  for (const id of ourDeletes) merged.delete(id);
+  for (const [id, r] of ourMutations) merged.set(id, r);
+
+  const mergedRecords = [...merged.values()];
+
+  // ---- Custom lists: union ----
+  const unionArr = (a, b) => {
+    const seen = new Set();
+    const out = [];
+    [...(a||[]), ...(b||[])].forEach(x => { if (x && !seen.has(x)) { seen.add(x); out.push(x); } });
+    return out;
+  };
+
+  return {
+    ...cloud,
+    ...ours,
+    records: mergedRecords,
+    customCourses:     unionArr(cloud.customCourses,     ours.customCourses),
+    customEnterprises: unionArr(cloud.customEnterprises, ours.customEnterprises),
+    instructors:       unionArr(cloud.instructors,       ours.instructors),
+    lastModified: new Date().toISOString()
+  };
+}
+
+// Save DB to Supabase with conflict-resolution merge.
+async function saveDB(opts = {}) {
+  const silent = opts.silent === true; // suppress toast for autosave
+
   if (!isDirty) {
-    toast('Нет изменений для сохранения', 'success');
+    if (!silent) toast('Нет изменений для сохранения', 'success');
     return;
   }
-  db.lastModified = new Date().toISOString();
+  if (isSaving) return; // another save in progress
+  isSaving = true;
+
+  // Cancel pending autosave — we're saving now
+  if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+
   setFileStatus('yellow', '⏳ Сохранение…');
   try {
+    // 1. Read current cloud version
+    const cloud = await fetchCloudDB();
+
+    // 2. Detect if cloud changed since our last sync
+    const cloudStr = JSON.stringify(cloud);
+    const baseStr  = baseSnapshot ? JSON.stringify(baseSnapshot) : null;
+    const conflicted = baseStr !== null && cloudStr !== baseStr;
+
+    // 3. Merge if needed, otherwise just stamp & send our version
+    let toSave;
+    if (conflicted) {
+      toSave = mergeDB(cloud, baseSnapshot, db);
+      console.log('saveDB: conflict detected — merged with cloud version');
+    } else {
+      toSave = cloneDB(db);
+      toSave.lastModified = new Date().toISOString();
+    }
+
+    // 4. Upsert to cloud
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/db_state?on_conflict=id`,
       {
         method: 'POST',
         headers: { ...SB_HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ id: DB_ROW_ID, data: db })
+        body: JSON.stringify({ id: DB_ROW_ID, data: toSave })
       }
     );
     if (!res.ok) {
       const errText = await res.text();
       throw new Error('HTTP ' + res.status + ': ' + errText);
     }
+
+    // 5. Update local state to match what we saved
+    db = toSave;
+    baseSnapshot = cloneDB(toSave);
     isDirty = false;
+    document.getElementById('saveBtn').disabled = true;
     setFileStatus('green', '☁ Сохранено');
-    toast('Сохранено в облако', 'success');
+
+    if (conflicted) {
+      // Re-render so user sees merged state
+      refreshAll();
+      toast('Сохранено (объединено с изменениями коллег)', 'success');
+    } else if (!silent) {
+      toast('Сохранено в облако', 'success');
+    }
   } catch(e) {
     console.error('saveDB error:', e);
     setFileStatus('red', '❌ Ошибка сохранения');
     toast('Ошибка сохранения: ' + e.message, 'error');
+  } finally {
+    isSaving = false;
   }
 }
 
-// Manual refresh button — reloads from cloud, warns about unsaved changes
+// Manual refresh — reload from cloud. Warns if local changes would be lost.
 async function reloadDB() {
   if (isDirty && !confirm('Есть несохранённые изменения. Перезагрузить из облака? Локальные изменения будут потеряны.')) return;
   await loadDB();
   toast('База перезагружена из облака', 'success');
+}
+
+// Background poll — quietly pull latest cloud version every POLL_INTERVAL ms.
+// Skips if user has unsaved changes (don't clobber their work).
+async function backgroundPoll() {
+  if (isDirty || isSaving || document.hidden) return;
+  try {
+    const cloud = await fetchCloudDB();
+    const cloudStr = JSON.stringify(cloud);
+    const baseStr  = baseSnapshot ? JSON.stringify(baseSnapshot) : null;
+    if (cloudStr === baseStr) return; // no remote changes
+    // Remote has newer data — adopt it
+    db = cloud;
+    baseSnapshot = cloneDB(cloud);
+    refreshAll();
+    setFileStatus('green', '☁ Обновлено из облака');
+    toast('Подгружены изменения от коллег', 'success');
+  } catch(e) {
+    console.warn('backgroundPoll error:', e.message);
+    // Don't show error toast for background poll — silent failure is fine
+  }
 }
 
 function setFileStatus(color, text) {
@@ -990,9 +1115,19 @@ function setFileStatus(color, text) {
   document.getElementById('filePath').textContent = text;
 }
 
+// Called by every mutation (addRecord, deleteRecord, import, rename, etc).
+// Marks dirty + schedules autosave.
 function markDirty() {
   isDirty = true;
   document.getElementById('saveBtn').disabled = false;
+  setFileStatus('yellow', '● Есть несохранённые изменения');
+
+  // Reset debounce timer — save AUTOSAVE_DELAY ms after last change
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    autosaveTimer = null;
+    saveDB({ silent: true });
+  }, AUTOSAVE_DELAY);
 }
 
 // ============================================================
@@ -1993,8 +2128,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
   refreshAll();
 
-  // Warn before leaving with unsaved changes
+  // Warn before leaving with unsaved changes — and try to flush pending autosave
   window.addEventListener('beforeunload', e => {
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      // Best-effort sync save attempt — modern browsers ignore async work in beforeunload,
+      // but the warning will give user a chance to wait before closing.
+      saveDB({ silent: true });
+    }
     if (isDirty) { e.preventDefault(); e.returnValue = ''; }
   });
 
@@ -2005,6 +2147,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   await loadDB();
+
+  // Background poll: pull cloud changes from coworkers every POLL_INTERVAL ms
+  pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
 });
 </script>
 </body>
