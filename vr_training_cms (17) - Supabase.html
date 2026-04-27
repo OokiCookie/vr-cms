@@ -1,0 +1,2011 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VR Обучение — CMS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #f2ede3;
+  --bg2: #e9e3d7;
+  --card: #ffffff;
+  --card2: #f8f4ee;
+  --border: #dcd7cc;
+  --border2: #c8c2b4;
+  --blue: #1a5fc8;
+  --blue2: #2070e0;
+  --cyan: #0b8a94;
+  --gold: #c47a12;
+  --green: #167a35;
+  --red: #c02535;
+  --text: #1a1410;
+  --text2: #5a5040;
+  --text3: #9a8a72;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Exo 2', sans-serif;
+  --radius: 10px;
+  --radius2: 6px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+/* HEADER */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.header-logo .logo-icon {
+  width: 30px; height: 30px;
+  background: var(--blue);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.header-logo span {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+}
+.header-logo .subtitle { color: var(--text2); font-size: 12px; font-weight: 400; }
+.header-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.file-status {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  max-width: 300px;
+  overflow: hidden;
+}
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.yellow { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.status-dot.red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.file-path { color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.header-actions { display: flex; gap: 8px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius2);
+  border: none;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary:hover { background: var(--blue2); }
+.btn-secondary { background: var(--card2); color: var(--text); border: 1px solid var(--border2); }
+.btn-secondary:hover { background: var(--border); }
+.btn-success { background: #166534; color: #86efac; border: 1px solid #16a34a; }
+.btn-success:hover { background: #15803d; }
+.btn-danger { background: #7f1d1d; color: #fca5a5; border: 1px solid #dc2626; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+/* NAV */
+.nav {
+  display: flex;
+  gap: 0;
+  padding: 0 24px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.nav-tab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 13px 18px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  user-select: none;
+}
+.nav-tab:hover { color: var(--text); }
+.nav-tab.active { color: var(--blue2); border-bottom-color: var(--blue2); }
+.nav-tab .tab-count {
+  background: var(--card2);
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.nav-tab.active .tab-count { background: #1a3060; color: var(--blue2); }
+/* LAYOUT */
+.content { padding: 24px; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+/* CARDS */
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.kpi-row-top { display: grid; grid-template-columns: 260px 1fr; gap: 16px; margin-bottom: 24px; align-items: stretch; }
+.kpi-left-col { display: flex; flex-direction: column; gap: 16px; }
+.kpi-left-col .kpi-card { flex: 1; }
+.form-grid-2col { grid-template-columns: repeat(2, 1fr) !important; }
+.instr-tag { display:inline-flex;align-items:center;gap:5px;padding:3px 8px;background:var(--card2);border:1px solid var(--border2);border-radius:4px;font-size:11px;color:var(--text2); }
+.instr-tag button { background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;line-height:1;padding:0; }
+.instr-tag button:hover { color:var(--red); }
+.instr-row { display:flex;align-items:center;gap:10px; }
+.instr-bar-wrap { flex:1;height:6px;background:var(--card2);border-radius:3px;overflow:hidden;min-width:80px; }
+.instr-bar-fill { height:100%;background:var(--cyan);border-radius:3px; }
+.instr-bar-wrap { background: var(--bg2) !important; }
+.kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.kpi-card::after {
+  content: '';
+  position: absolute; top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: var(--accent, var(--blue));
+}
+.kpi-card.green { --accent: var(--green); }
+.kpi-card.gold { --accent: var(--gold); }
+.kpi-card.cyan { --accent: var(--cyan); }
+.kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.8px; color: var(--text2); text-transform: uppercase; margin-bottom: 8px; }
+.kpi-value { font-size: 32px; font-weight: 800; font-family: var(--mono); line-height: 1; margin-bottom: 4px; }
+.kpi-sub { font-size: 12px; color: var(--text3); }
+/* CHARTS GRID */
+.charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+.chart-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.chart-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.chart-title::before {
+  content: '';
+  display: inline-block; width: 10px; height: 10px;
+  background: var(--blue); border-radius: 2px;
+}
+.charts-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+canvas { max-height: 260px; }
+/* TABLE */
+.table-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.table-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.table-title { font-weight: 700; font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.6px; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead tr { background: var(--card2); }
+th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--blue); }
+th.sort-asc::after { content: ' ▲'; color: var(--blue); }
+th.sort-desc::after { content: ' ▼'; color: var(--blue); }
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+tbody tr:hover { background: var(--card2); }
+tbody tr:last-child td { border-bottom: none; }
+.mono { font-family: var(--mono); font-size: 12px; color: var(--text2); }
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-blue { background: #dbeafe; color: #1e40af; }
+.badge-green { background: #dcfce7; color: #166534; }
+.badge-gold { background: #fef9c3; color: #854d0e; }
+.badge-red { background: #fee2e2; color: #991b1b; }
+.progress-wrap { display: flex; align-items: center; gap: 8px; }
+.progress-bar {
+  flex: 1; height: 6px; background: var(--card2);
+  border-radius: 3px; overflow: hidden; min-width: 60px;
+}
+.progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.progress-val { font-family: var(--mono); font-size: 12px; color: var(--text2); min-width: 32px; }
+/* FORM */
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+.form-grid-2 { grid-template-columns: 1fr 1fr; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group label { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+.form-group input,
+.form-group select,
+.form-group datalist {
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-group input:focus,
+.form-group select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(26,110,245,0.2);
+}
+.form-group input::placeholder { color: var(--text3); }
+select option { background: var(--card2); }
+.form-actions {
+  display: flex; gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+/* SEARCH/FILTER ROW */
+.filter-row {
+  display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.search-wrap { position: relative; flex: 1; min-width: 200px; }
+.search-wrap input {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  color: var(--text);
+  padding: 9px 12px 9px 36px;
+  font-size: 13px;
+  font-family: var(--sans);
+  outline: none;
+}
+.search-wrap input:focus { border-color: var(--blue); }
+.search-icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  color: var(--text3); font-size: 15px; pointer-events: none;
+}
+.filter-select {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: var(--sans);
+  outline: none;
+  min-width: 150px;
+}
+.filter-select:focus { border-color: var(--blue); }
+/* PAGINATION */
+.pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text2);
+}
+.page-btns { display: flex; gap: 4px; }
+.page-btn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  transition: all 0.15s;
+}
+.page-btn:hover, .page-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+/* ALERTS */
+.alert {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius2);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.alert-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.alert-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+/* EXPORT PAGE */
+.export-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.export-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.export-card h3 { font-size: 15px; font-weight: 700; }
+.export-card p { font-size: 12px; color: var(--text2); line-height: 1.6; }
+.export-card .export-icon { font-size: 28px; }
+/* MODAL */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: none; align-items: center; justify-content: center;
+  z-index: 999;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 28px;
+  width: 500px;
+  max-width: 95vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
+.modal h2 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.modal p { color: var(--text2); font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+/* SECTION HEADER */
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.section-title { font-size: 16px; font-weight: 700; }
+/* EMPTY STATE */
+.empty-state {
+  text-align: center; padding: 60px 20px;
+  color: var(--text3);
+}
+.empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state p { font-size: 13px; margin-top: 6px; }
+/* TOAST */
+#toast {
+  position: fixed; bottom: 24px; right: 24px;
+  padding: 12px 18px;
+  border-radius: var(--radius2);
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 9999;
+  transform: translateY(80px);
+  opacity: 0;
+  transition: all 0.3s;
+  pointer-events: none;
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+#toast.success { background: #166534; color: #fff; border: 1px solid #22c55e; }
+#toast.error { background: #991b1b; color: #fff; border: 1px solid #ef4444; }
+/* IMPORT PANEL */
+.import-dropzone {
+  border: 2px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text2);
+  font-size: 13px;
+}
+.import-dropzone:hover { border-color: var(--blue); background: rgba(26,110,245,0.05); }
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .kpi-row-top { grid-template-columns: 1fr; }
+  .charts-row, .charts-row2 { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr 1fr; }
+  .export-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .kpi-row { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .header { padding: 0 14px; }
+  .content { padding: 14px; }
+}
+/* REF TABLES */
+.ref-rename-input {
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  color: var(--text);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-family: var(--sans);
+  outline: none;
+  width: 100%;
+}
+.ref-rename-input:focus { border-color: var(--blue); }
+.ref-count { font-family: var(--mono); font-size: 12px; text-align:center; }
+.ref-count.has-records { color: var(--blue); font-weight:600; }
+.ref-count.no-records { color: var(--text3); }
+
+/* DUPLICATE WARNING */
+.dup-badge {
+  background: #3a2a10; color: #fbbf24;
+  font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700;
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-logo">
+    <div class="logo-icon">🎓</div>
+    <div>
+      <div><span style="font-weight:800">VR Обучение</span> <span class="subtitle">/ CMS система</span></div>
+    </div>
+  </div>
+  <div class="header-file">
+    <div class="file-status" id="fileStatus">
+      <div class="status-dot yellow" id="statusDot"></div>
+      <span class="file-path" id="filePath">Подключение к облаку…</span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-secondary" onclick="reloadDB()" title="Перезагрузить из облака">🔄 Обновить</button>
+    <button class="btn btn-success" id="saveBtn" onclick="saveDB()" disabled>💾 Сохранить</button>
+  </div>
+</div>
+
+<!-- NAV -->
+<div class="nav">
+  <div class="nav-tab active" onclick="switchTab('dashboard', this)">
+    📊 Дашборд
+  </div>
+  <div class="nav-tab" onclick="switchTab('input', this)">
+    ➕ Ввод данных
+  </div>
+  <div class="nav-tab" onclick="switchTab('journal', this)">
+    📋 Журнал <span class="tab-count" id="journalCount">0</span>
+  </div>
+  <div class="nav-tab" onclick="switchTab('export', this)">
+    📤 Экспорт / Импорт
+  </div>
+  <div class="nav-tab" onclick="switchTab('refs', this)">
+    🗂 Справочники
+  </div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- DASHBOARD TAB -->
+  <div class="tab-pane active" id="tab-dashboard">
+    <div id="noDataMsg" class="alert alert-info" style="display:none">
+      ℹ️ Нет данных. Откройте существующую базу или создайте новую, затем добавьте записи через «Ввод данных».
+    </div>
+    <div class="kpi-row-top">
+      <div class="kpi-left-col">
+        <div class="kpi-card">
+          <div class="kpi-label">Всего обучено</div>
+          <div class="kpi-value" id="kpiTotal">0</div>
+          <div class="kpi-sub">записей в базе</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-label">Текущий месяц</div>
+          <div class="kpi-value" id="kpiMonth">0</div>
+          <div class="kpi-sub" id="kpiMonthLabel">—</div>
+        </div>
+      </div>
+      <div class="kpi-card" style="--accent:var(--cyan)">
+        <div class="kpi-label" style="margin-bottom:12px">По инструкторам</div>
+        <div id="instructorBreakdown" style="display:flex;flex-direction:column;gap:8px">
+          <span style="color:var(--text3);font-size:12px">Нет данных</span>
+        </div>
+      </div>
+    </div>
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Обучено по месяцам</div>
+        <canvas id="chartMonths"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">По предприятиям</div>
+        <canvas id="chartEnterprises"></canvas>
+      </div>
+    </div>
+    <div style="margin-bottom:24px">
+      <div class="chart-card">
+        <div class="chart-title">Топ курсы</div>
+        <div id="chartCourses" style="padding:4px 0"></div>
+      </div>
+    </div>
+    <!-- Recent entries table on dashboard -->
+    <div class="table-wrap">
+      <div class="table-header">
+        <span class="table-title">Последние 20 записей</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Дата</th><th>ФИО</th><th>Предприятие</th><th>Курс</th><th>% курса</th><th>Инструктор</th>
+            </tr>
+          </thead>
+          <tbody id="dashRecentBody">
+            <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет данных</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- INPUT TAB -->
+  <div class="tab-pane" id="tab-input">
+    <div class="section-header">
+      <div class="section-title">Добавить запись об обучении</div>
+    </div>
+    <div class="table-wrap" style="padding:20px;margin-bottom:20px">
+      <div id="dupWarning" class="alert alert-warn" style="display:none">
+        ⚠️ Возможный дубликат: сотрудник с таким табельным номером уже проходил этот курс в этом месяце.
+      </div>
+      <div class="form-grid form-grid-2col">
+        <div class="form-group">
+          <label>Дата обучения *</label>
+          <input type="date" id="f_date" onchange="onDateChange()">
+        </div>
+        <div class="form-group">
+          <label>Предприятие *</label>
+          <input type="text" id="f_enterprise" list="list_enterprises" placeholder="АксЗФ, АО ЕЭК..." autocomplete="off">
+          <datalist id="list_enterprises"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Табельный номер *</label>
+          <input type="text" id="f_tab" placeholder="20436482" oninput="checkDuplicate()">
+        </div>
+        <div class="form-group">
+          <label>ФИО *</label>
+          <input type="text" id="f_name" placeholder="Иванов Иван Иванович">
+        </div>
+        <div class="form-group">
+          <label>Должность</label>
+          <input type="text" id="f_position" list="list_positions" placeholder="Электрогазосварщик..." autocomplete="off">
+          <datalist id="list_positions"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Курс обучения *</label>
+          <input type="text" id="f_course" list="list_courses" placeholder="Стропальщик..." autocomplete="off" oninput="checkDuplicate()">
+          <datalist id="list_courses"></datalist>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>% прохождения курса</label>
+          <input type="number" id="f_completion" min="0" max="100" placeholder="85" style="max-width:200px">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Инструктор</label>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <div style="flex:1;position:relative">
+              <input type="text" id="f_instructor" list="list_instructors" placeholder="Смағұл Е. Д." autocomplete="off" style="width:100%">
+              <datalist id="list_instructors"></datalist>
+            </div>
+            <button class="btn btn-secondary btn-sm" style="padding:9px 14px;white-space:nowrap" onclick="saveInstructor()" title="Сохранить инструктора в справочник">+ В список</button>
+          </div>
+          <div id="instructorTags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="addRecord()">✅ Добавить запись</button>
+        <button class="btn btn-secondary" onclick="clearForm()">🗑 Очистить</button>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <div class="section-title">Последние добавленные</div>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Дата</th><th>Табельный</th><th>ФИО</th><th>Предприятие</th><th>Курс</th><th>%</th><th>Инструктор</th><th></th></tr>
+          </thead>
+          <tbody id="recentBody">
+            <tr><td colspan="9" style="text-align:center;color:var(--text3);padding:30px">Нет записей</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- JOURNAL TAB -->
+  <div class="tab-pane" id="tab-journal">
+    <div class="section-header">
+      <div class="section-title">Журнал обучения</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ CSV</button>
+        <span style="color:var(--text3);font-size:12px;align-self:center" id="selectedInfo"></span>
+      </div>
+    </div>
+    <div class="filter-row">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Поиск по ФИО, табельному, курсу..." oninput="filterRecords()">
+      </div>
+      <select class="filter-select" id="filterMonth" onchange="filterRecords()">
+        <option value="">Все месяцы</option>
+      </select>
+      <select class="filter-select" id="filterEnterprise" onchange="filterRecords()">
+        <option value="">Все предприятия</option>
+      </select>
+      <select class="filter-select" id="filterCourse" onchange="filterRecords()">
+        <option value="">Все курсы</option>
+      </select>
+      <select class="filter-select" id="filterInstructor" onchange="filterRecords()">
+        <option value="">Все инструкторы</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="resetFilters()">✕ Сбросить</button>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr id="journalThead">
+              <th><input type="checkbox" id="checkAll" onchange="toggleAll(this)"></th>
+              <th class="sortable" onclick="sortJournal('date')">Дата</th>
+              <th class="sortable" onclick="sortJournal('month')">Месяц</th>
+              <th class="sortable" onclick="sortJournal('enterprise')">Предприятие</th>
+              <th>Цех</th>
+              <th class="sortable" onclick="sortJournal('tabNumber')">Таб. №</th>
+              <th class="sortable" onclick="sortJournal('fullName')">ФИО</th>
+              <th>Должность</th>
+              <th class="sortable" onclick="sortJournal('course')">Курс</th>
+              <th class="sortable" onclick="sortJournal('completion')">%</th>
+              <th class="sortable" onclick="sortJournal('instructor')">Инструктор</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="journalBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span id="paginationInfo">0 записей</span>
+        <div class="page-btns" id="pageBtns"></div>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px" id="bulkActions" style="display:none">
+      <button class="btn btn-danger btn-sm" onclick="deleteSelected()">🗑 Удалить выбранные</button>
+    </div>
+  </div>
+
+  <!-- REFS TAB -->
+  <div class="tab-pane" id="tab-refs">
+    <div class="section-header">
+      <div class="section-title">Справочники</div>
+      <div style="font-size:12px;color:var(--text2)">Изменения сразу применяются ко всем записям в базе</div>
+    </div>
+
+    <!-- COURSES -->
+    <div class="table-wrap" style="margin-bottom:20px">
+      <div class="table-header" style="justify-content:space-between">
+        <span class="table-title">Курсы обучения</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="newCourseName" placeholder="Название нового курса" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:6px 10px;font-size:13px;font-family:var(--sans);outline:none;width:280px">
+          <button class="btn btn-primary btn-sm" onclick="addRefCourse()">+ Добавить</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Название курса</th>
+              <th style="text-align:center">Записей</th>
+              <th style="width:340px">Переименовать в</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="refCoursesBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ENTERPRISES -->
+    <div class="table-wrap" style="margin-bottom:20px">
+      <div class="table-header" style="justify-content:space-between">
+        <span class="table-title">Предприятия</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="newEntName" placeholder="Название предприятия" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:6px 10px;font-size:13px;font-family:var(--sans);outline:none;width:280px">
+          <button class="btn btn-primary btn-sm" onclick="addRefEnterprise()">+ Добавить</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Название предприятия</th>
+              <th style="text-align:center">Записей</th>
+              <th style="width:340px">Переименовать в</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="refEntBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPORT TAB -->
+  <div class="tab-pane" id="tab-export">
+    <div class="section-header">
+      <div class="section-title">Экспорт и Импорт данных</div>
+    </div>
+    <div class="export-grid">
+      <div class="export-card">
+        <div class="export-icon">📊</div>
+        <h3>Экспорт в Excel (.xlsx)</h3>
+        <p>Экспортирует все записи в формате Excel — как оригинальный «Обученные VR по площадкам», с листами по месяцам.</p>
+        <button class="btn btn-primary" onclick="exportExcelFull()">⬇ Скачать Excel</button>
+      </div>
+      <div class="export-card">
+        <div class="export-icon">📋</div>
+        <h3>Сводка «Факт обучения»</h3>
+        <p>Сводная таблица по предприятиям × курсам × месяцам — формат третьего документа «Факт обучения VR».</p>
+        <button class="btn btn-primary" onclick="exportSummaryExcel()">⬇ Сводка Excel</button>
+      </div>
+      <div class="export-card">
+        <div class="export-icon">💾</div>
+        <h3>Резервная копия (JSON)</h3>
+        <p>Сохраняет всю базу данных в JSON-файл. Используйте для резервного копирования или переноса данных между компьютерами.</p>
+        <button class="btn btn-secondary" onclick="exportJSON()">⬇ Скачать JSON</button>
+      </div>
+      <div class="export-card">
+        <div class="export-icon">📂</div>
+        <h3>Импорт из JSON</h3>
+        <p>Загрузите ранее сохранённый JSON-файл. Данные будут <strong>добавлены</strong> к текущим (дубликаты исключаются по ID).</p>
+        <label class="btn btn-secondary" style="cursor:pointer">
+          ⬆ Выбрать JSON
+          <input type="file" accept=".json" style="display:none" onchange="importJSON(event)">
+        </label>
+      </div>
+      <div class="export-card">
+        <div class="export-icon">📑</div>
+        <h3>Импорт из Excel</h3>
+        <p>Загрузите Excel-файл в формате «Результаты обучения» (первый документ). Данные будут добавлены к текущей базе.</p>
+        <label class="btn btn-secondary" style="cursor:pointer">
+          ⬆ Выбрать XLSX
+          <input type="file" accept=".xlsx,.xls" style="display:none" onchange="importExcel(event)">
+        </label>
+      </div>
+      <div class="export-card">
+        <div class="export-icon">🗑</div>
+        <h3>Очистить базу</h3>
+        <p>Удаляет <strong>все записи</strong> из текущей базы данных. Это действие необратимо — сначала сделайте резервную копию.</p>
+        <button class="btn btn-danger" onclick="confirmClear()">⚠ Очистить всё</button>
+      </div>
+    </div>
+    <div style="margin-top:20px;display:none" class="table-wrap" id="importPreview">
+      <div class="table-header" style="justify-content:space-between">
+        <span class="table-title" id="importPreviewTitle">Результат импорта</span>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('importPreview').style.display='none'">✕ Закрыть</button>
+      </div>
+      <div style="padding:16px">
+        <div id="importProgressBar" style="display:none;margin-bottom:14px">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px" id="importProgressLabel">Читаем файл…</div>
+          <div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden">
+            <div id="importProgressFill" style="height:100%;background:var(--blue);border-radius:3px;width:0%;transition:width 0.4s"></div>
+          </div>
+        </div>
+        <div id="importResultBody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">Подтверждение</h2>
+    <p id="modalText"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-danger" id="modalConfirmBtn">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// SUPABASE CONFIG — замените значения ниже на свои из Supabase Dashboard
+// (Project Settings → API)
+// ============================================================
+const SUPABASE_URL = 'https://uvfydjqvurttsuaahfwb.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2ZnlkanF2dXJ0dHN1YWFoZndiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIyMjIsImV4cCI6MjA5Mjc5ODIyMn0.HeQYXLLOx3bmc2JGaiIPs_Lap27aQGCziaiR--DiZsc';
+const DB_ROW_ID = 1; // ID единственной строки в таблице db_state
+
+// ============================================================
+// STATE
+// ============================================================
+let db = { version: '1.0', lastModified: null, records: [] };
+let isDirty = false;
+let filteredRecords = [];
+let currentPage = 1;
+const PAGE_SIZE = 30;
+let selectedIds = new Set();
+let charts = {};
+let sortField = 'date';
+let sortDir = 'desc';
+
+// ============================================================
+// REFERENCE DATA (autocomplete lists)
+// ============================================================
+const REF = {
+  enterprises: [
+    'АксЗФ', 'АктЗФ', 'АО ЕЭК', 'АО "ЕЭК"', 'АО "ССГПО"', 'АО "ДГОК"', 'АО "АК"',
+    'ТОО "ERG Service" Аксу', 'ТОО "ERG Service" Павлодар',
+    'ТОО "ЕРГ Ресайклинг"', 'КЭЗ', 'ПАЗ', 'АО "ЕПК"'
+  ],
+  departments: [
+    'БРМЦ', 'ЭС_БФС', 'ТТРЦ', 'ПРП_ЦППР', 'ЦППР', 'РСЦ', 'ЦСО', 'ЭС_ТТРЦ',
+    'ЭлЦ', 'ЭЦ', 'ЦЦ', 'ЦРТО', 'Регион "Центр"', 'ПЦ 2'
+  ],
+  courses: [], // managed via Справочники tab
+  instructors: ['Смағұл Е. Д.', 'Манджиев С.А.'],
+  positions: [
+    'Электрогазосварщик', 'Слесарь-ремонтник', 'Слесарь механосборочных работ',
+    'Токарь', 'Электромонтер по ремонту и обслуживанию электрооборудования',
+    'Слесарь по ремонту ПГТО', 'Котлочист', 'Огнеупорщик', 'Газорезчик',
+    'Электросварщик ручной сварки', 'Горновой ферросплавных печей',
+    'Плавильщик ферросплавов', 'Машинист насосных установок'
+  ]
+};
+
+const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+                 'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+// ============================================================
+// SUPABASE CLOUD STORAGE
+// ============================================================
+const SB_HEADERS = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': 'Bearer ' + SUPABASE_KEY,
+  'Content-Type': 'application/json'
+};
+
+// Load DB state from Supabase. Called automatically on page load and on manual refresh.
+async function loadDB() {
+  setFileStatus('yellow', '⏳ Загрузка из облака…');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/db_state?id=eq.${DB_ROW_ID}&select=data`,
+      { headers: SB_HEADERS }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+    const rows = await res.json();
+    if (!rows.length) {
+      // First run — row doesn't exist yet, will be created on first save
+      db = { version: '1.0', lastModified: null, records: [] };
+      setFileStatus('green', '☁ Облако (пустая база)');
+    } else {
+      db = rows[0].data || { version: '1.0', lastModified: null, records: [] };
+      if (!db.records) db.records = [];
+      setFileStatus('green', '☁ Облако подключено');
+    }
+    document.getElementById('saveBtn').disabled = false;
+    isDirty = false;
+    refreshAll();
+    return true;
+  } catch(e) {
+    console.error('loadDB error:', e);
+    setFileStatus('red', '❌ Облако недоступно');
+    toast('Ошибка загрузки: ' + e.message, 'error');
+    document.getElementById('saveBtn').disabled = true;
+    return false;
+  }
+}
+
+// Save DB state to Supabase. Uses upsert: creates row if it doesn't exist, updates otherwise.
+async function saveDB() {
+  if (!isDirty) {
+    toast('Нет изменений для сохранения', 'success');
+    return;
+  }
+  db.lastModified = new Date().toISOString();
+  setFileStatus('yellow', '⏳ Сохранение…');
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/db_state?on_conflict=id`,
+      {
+        method: 'POST',
+        headers: { ...SB_HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ id: DB_ROW_ID, data: db })
+      }
+    );
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error('HTTP ' + res.status + ': ' + errText);
+    }
+    isDirty = false;
+    setFileStatus('green', '☁ Сохранено');
+    toast('Сохранено в облако', 'success');
+  } catch(e) {
+    console.error('saveDB error:', e);
+    setFileStatus('red', '❌ Ошибка сохранения');
+    toast('Ошибка сохранения: ' + e.message, 'error');
+  }
+}
+
+// Manual refresh button — reloads from cloud, warns about unsaved changes
+async function reloadDB() {
+  if (isDirty && !confirm('Есть несохранённые изменения. Перезагрузить из облака? Локальные изменения будут потеряны.')) return;
+  await loadDB();
+  toast('База перезагружена из облака', 'success');
+}
+
+function setFileStatus(color, text) {
+  document.getElementById('statusDot').className = 'status-dot ' + color;
+  document.getElementById('filePath').textContent = text;
+}
+
+function markDirty() {
+  isDirty = true;
+  document.getElementById('saveBtn').disabled = false;
+}
+
+// ============================================================
+// RECORD MANAGEMENT
+// ============================================================
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function addRecord() {
+  const date = document.getElementById('f_date').value;
+  const enterprise = document.getElementById('f_enterprise').value.trim();
+  const tab = document.getElementById('f_tab').value.trim();
+  const name = document.getElementById('f_name').value.trim();
+  const position = document.getElementById('f_position').value.trim();
+  const course = document.getElementById('f_course').value.trim();
+  const completion = parseInt(document.getElementById('f_completion').value) || 0;
+  const instructor = document.getElementById('f_instructor').value.trim();
+
+  if (!date) { toast('Укажите дату обучения', 'error'); return; }
+  if (!enterprise) { toast('Укажите предприятие', 'error'); return; }
+  if (!tab) { toast('Укажите табельный номер', 'error'); return; }
+  if (!name) { toast('Укажите ФИО', 'error'); return; }
+  if (!course) { toast('Укажите курс обучения', 'error'); return; }
+
+  const d = new Date(date);
+  const month = MONTHS[d.getMonth()];
+
+  const record = {
+    id: generateId(),
+    date, month,
+    enterprise, department: '',
+    tabNumber: tab, fullName: name, position,
+    course, completion, hours: 8, instructor,
+    createdAt: new Date().toISOString()
+  };
+
+  db.records.push(record);
+  markDirty();
+  updateAutocompleteLists();
+  refreshAll();
+  clearForm();
+  toast('Запись добавлена', 'success');
+}
+
+function deleteRecord(id) {
+  db.records = db.records.filter(r => r.id !== id);
+  markDirty();
+  refreshAll();
+  toast('Запись удалена', 'success');
+}
+
+function deleteSelected() {
+  if (selectedIds.size === 0) return;
+  showModal('Удалить записи?', `Будет удалено ${selectedIds.size} записей. Это действие необратимо.`, () => {
+    db.records = db.records.filter(r => !selectedIds.has(r.id));
+    selectedIds.clear();
+    markDirty();
+    refreshAll();
+    closeModal();
+    toast('Записи удалены', 'success');
+  });
+}
+
+function checkDuplicate() {
+  const tab = document.getElementById('f_tab').value.trim();
+  const course = document.getElementById('f_course').value.trim();
+  const month = getSelectedMonth();
+  if (!tab || !course || !month) { document.getElementById('dupWarning').style.display = 'none'; return; }
+  const dup = db.records.find(r => r.tabNumber === tab && r.course === course && r.month === month);
+  document.getElementById('dupWarning').style.display = dup ? 'flex' : 'none';
+}
+
+function getSelectedMonth() {
+  const date = document.getElementById('f_date').value;
+  if (!date) return null;
+  return MONTHS[new Date(date).getMonth()];
+}
+
+function clearForm() {
+  ['f_date','f_tab','f_name','f_position','f_course','f_completion','f_instructor']
+    .forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f_enterprise').value = '';
+  document.getElementById('dupWarning').style.display = 'none';
+}
+
+function onDateChange() { checkDuplicate(); }
+
+// ============================================================
+// REFRESH / RENDER
+// ============================================================
+function refreshAll() {
+  updateKPIs();
+  updateCharts();
+  renderRecentDash();
+  renderRecentInput();
+  filterRecords();
+  updateFilterOptions();
+  updateAutocompleteLists();
+  document.getElementById('journalCount').textContent = db.records.length;
+  const noData = db.records.length === 0;
+  document.getElementById('noDataMsg').style.display = noData ? 'flex' : 'none';
+}
+
+function updateKPIs() {
+  const recs = db.records;
+  document.getElementById('kpiTotal').textContent = recs.length.toLocaleString('ru');
+  const now = new Date();
+  const curMonth = MONTHS[now.getMonth()];
+  const thisMonth = recs.filter(r => r.month === curMonth).length;
+  document.getElementById('kpiMonth').textContent = thisMonth;
+  document.getElementById('kpiMonthLabel').textContent = curMonth + ' ' + now.getFullYear();
+  renderInstructorBreakdown(recs);
+}
+
+function renderInstructorBreakdown(recs) {
+  const counts = {};
+  recs.forEach(r => {
+    const key = (r.instructor || '').trim() || '— не указан —';
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+  const total = recs.length || 1;
+  const el = document.getElementById('instructorBreakdown');
+  if (!sorted.length) { el.innerHTML = '<span style="color:var(--text3);font-size:12px">Нет данных</span>'; return; }
+  el.innerHTML = sorted.map(([name, cnt]) => {
+    const pct = Math.round(cnt / total * 100);
+    const w = Math.round(cnt / sorted[0][1] * 100);
+    return `<div class="instr-row">
+      <span style="font-size:12px;min-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${name}</span>
+      <div class="instr-bar-wrap"><div class="instr-bar-fill" style="width:${w}%"></div></div>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--cyan);min-width:48px;text-align:right">${cnt} <span style="color:var(--text3);font-size:10px">(${pct}%)</span></span>
+    </div>`;
+  }).join('');
+}
+
+// Wrap a string label into multiple lines for Chart.js (pass array for multi-line)
+function wrapLabel(s, max) {
+  if (!s) return '—';
+  if (s.length <= max) return s;
+  const words = s.split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (test.length <= max) { line = test; }
+    else { if (line) lines.push(line); line = w.length > max ? w.slice(0, max) + '…' : w; }
+  }
+  if (line) lines.push(line);
+  return lines.length > 1 ? lines : s;
+}
+
+// Pure HTML/CSS bar chart — full control over label wrapping and spacing
+function renderHTMLBarChart(containerId, labels, data, color) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!labels || !labels.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px">Нет данных</div>'; return; }
+
+  const maxVal = Math.max(...data, 1);
+
+  el.innerHTML = labels.map((label, i) => {
+    const pct = (data[i] / maxVal * 100).toFixed(2);
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <div style="
+          width:200px;min-width:200px;
+          text-align:right;
+          font-size:12px;font-family:var(--sans);
+          color:var(--text2);
+          line-height:1.45;
+          word-break:break-word;
+          white-space:normal;
+          padding-right:4px;
+        ">${label}</div>
+        <div style="flex:1;height:22px;background:var(--bg2);border-radius:3px;overflow:hidden;position:relative">
+          <div style="
+            position:absolute;top:0;left:0;
+            height:100%;
+            width:${pct}%;
+            background:${color};
+            border-radius:3px;
+            transition:width 0.5s ease;
+          "></div>
+        </div>
+        <div style="
+          font-family:var(--mono);font-size:12px;
+          color:var(--text2);min-width:36px;text-align:right;
+        ">${data[i]}</div>
+      </div>`;
+  }).join('');
+}
+
+function updateCharts() {
+  // Monthly chart
+  const monthCounts = {};
+  MONTHS.forEach(m => monthCounts[m] = 0);
+  db.records.forEach(r => { if (r.month) monthCounts[r.month] = (monthCounts[r.month]||0)+1; });
+  updateBarChart('chartMonths', MONTHS, MONTHS.map(m => monthCounts[m]), '#1a6ef5');
+
+  // Enterprise donut
+  const entCounts = {};
+  db.records.forEach(r => { entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
+  const entSorted = Object.entries(entCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  updateDonut('chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]));
+
+  // Top courses – wrap long labels into multiple lines for Chart.js
+  const coCounts = {};
+  db.records.forEach(r => {
+    const name = String(r.course||'').trim();
+    if (name) coCounts[name] = (coCounts[name]||0)+1;
+  });
+  const coSorted = Object.entries(coCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  renderHTMLBarChart('chartCourses',
+    coSorted.map(e => e[0]),
+    coSorted.map(e => e[1]),
+    '#0b8a94');
+
+
+}
+
+function updateBarChart(id, labels, data, color) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id)?.getContext('2d');
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: color + 'cc', borderColor: color, borderWidth: 1, borderRadius: 4 }] },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } },
+        y: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } }
+      },
+      responsive: true, maintainAspectRatio: true
+    }
+  });
+}
+
+function updateDonut(id, labels, data) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id)?.getContext('2d');
+  if (!ctx) return;
+  const colors = ['#1a6ef5','#06b6d4','#f5a623','#22c55e','#f43f5e','#a855f7','#f97316','#84cc16'];
+  charts[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#f2ede3', borderWidth: 2 }] },
+    options: {
+      plugins: { legend: { position: 'right', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 11 }, padding: 8, boxWidth: 12 } } },
+      responsive: true, maintainAspectRatio: true
+    }
+  });
+}
+
+function updateHBarChart(id, labels, data, color) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+
+  const oldCanvas = document.getElementById(id);
+  if (!oldCanvas) return;
+  const parent = oldCanvas.parentNode;
+  const newCanvas = document.createElement('canvas');
+  newCanvas.id = id;
+
+  // Chart.js spaces ALL rows EQUALLY = totalHeight / numBars.
+  // So we must size every row for the TALLEST label (most lines).
+  const maxLines = Math.max(...(labels || []).map(l => Array.isArray(l) ? l.length : 1));
+  const LINE_PX  = 18;   // pixels per text line
+  const MARGIN   = 22;   // vertical padding per row (top+bottom)
+  const rowH     = maxLines * LINE_PX + MARGIN;  // uniform row height
+  const barThick = Math.round(rowH * 0.45);       // bar = 45% of row
+  const totalH   = Math.max(180, labels.length * rowH + 50);
+  parent.style.height = totalH + 'px';
+
+  parent.replaceChild(newCanvas, oldCanvas);
+  if (!labels || labels.length === 0) return;
+
+  charts[id] = new Chart(newCanvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: color + 'cc',
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 3,
+        barThickness: barThick
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      layout: { padding: { top: 6, bottom: 6 } },
+      scales: {
+        x: {
+          grid: { color: '#dcd7cc' },
+          ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } }
+        },
+        y: {
+          type: 'category',
+          grid: { color: 'transparent' },
+          afterFit(scale) { scale.width = 205; },
+          ticks: {
+            color: '#5a5040',
+            font: { family: 'Exo 2', size: 11 },
+            autoSkip: false,
+            padding: 10
+          }
+        }
+      },
+      responsive: true,
+      maintainAspectRatio: false
+    }
+  });
+}
+
+function renderRecentDash() {
+  const recent = [...db.records].reverse().slice(0, 20);
+  const tbody = document.getElementById('dashRecentBody');
+  if (!recent.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет данных</td></tr>'; return; }
+  tbody.innerHTML = recent.map(r => `
+    <tr>
+      <td class="mono">${formatDate(r.date)}</td>
+      <td>${r.fullName}</td>
+      <td><span class="badge badge-blue">${r.enterprise}</span></td>
+      <td>${r.course}</td>
+      <td>${renderProgress(r.completion)}</td>
+      <td class="mono" style="font-size:11px">${r.instructor||'—'}</td>
+    </tr>`).join('');
+}
+
+function renderRecentInput() {
+  const recent = [...db.records].reverse().slice(0, 10);
+  const tbody = document.getElementById('recentBody');
+  if (!recent.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:30px">Нет записей</td></tr>'; return; }
+  tbody.innerHTML = recent.map((r, i) => `
+    <tr>
+      <td class="mono" style="color:var(--text3)">${db.records.length - i}</td>
+      <td class="mono">${formatDate(r.date)}</td>
+      <td class="mono">${r.tabNumber}</td>
+      <td>${r.fullName}</td>
+      <td>${r.enterprise}</td>
+      <td>${r.course}</td>
+      <td>${renderProgress(r.completion)}</td>
+      <td class="mono" style="font-size:11px">${r.instructor||'—'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')">✕</button></td>
+    </tr>`).join('');
+}
+
+// ============================================================
+// JOURNAL / FILTER
+// ============================================================
+function sortJournal(field) {
+  if (sortField === field) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+  else { sortField = field; sortDir = 'asc'; }
+  // Update header classes
+  document.querySelectorAll('#journalThead th.sortable').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+  });
+  const clicked = document.querySelector(`#journalThead th[onclick="sortJournal('${field}')"]`);
+  if (clicked) clicked.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  currentPage = 1;
+  renderJournal();
+}
+
+function filterRecords() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const month = document.getElementById('filterMonth').value;
+  const enterprise = document.getElementById('filterEnterprise').value;
+  const course = document.getElementById('filterCourse').value;
+  const instructor = document.getElementById('filterInstructor')?.value || '';
+
+  filteredRecords = db.records.filter(r => {
+    if (month && r.month !== month) return false;
+    if (enterprise && r.enterprise !== enterprise) return false;
+    if (course && r.course !== course) return false;
+    if (instructor && (r.instructor||'') !== instructor) return false;
+    if (search && ![r.fullName, r.tabNumber, r.course, r.enterprise, r.position, r.instructor].join(' ').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  // Apply sort
+  filteredRecords.sort((a, b) => {
+    let av = (a[sortField]||''), bv = (b[sortField]||'');
+    if (sortField === 'completion') { av = Number(av)||0; bv = Number(bv)||0; }
+    const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv), 'ru');
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  currentPage = 1;
+  renderJournal();
+}
+
+function renderJournal() {
+  const total = filteredRecords.length;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const page = filteredRecords.slice(start, start + PAGE_SIZE);
+  const tbody = document.getElementById('journalBody');
+
+  document.getElementById('paginationInfo').textContent = `${total} записей`;
+
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">🔍</div><strong>Ничего не найдено</strong><p>Попробуйте изменить фильтры или условия поиска</p></div></td></tr>';
+    document.getElementById('pageBtns').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = page.map(r => {
+    const pct = r.completion;
+    let badgeClass = pct >= 80 ? 'badge-green' : pct >= 60 ? 'badge-gold' : 'badge-red';
+    const checked = selectedIds.has(r.id) ? 'checked' : '';
+    return `<tr>
+      <td><input type="checkbox" ${checked} onchange="toggleSelect('${r.id}', this)"></td>
+      <td class="mono">${formatDate(r.date)}</td>
+      <td><span class="badge badge-blue" style="font-size:11px">${r.month||'—'}</span></td>
+      <td>${r.enterprise}</td>
+      <td style="color:var(--text2);font-size:12px">${r.department||'—'}</td>
+      <td class="mono">${r.tabNumber}</td>
+      <td>${r.fullName}</td>
+      <td style="color:var(--text2);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.position||'—'}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.course}">${r.course}</td>
+      <td><span class="badge ${badgeClass}">${pct}%</span></td>
+      <td class="mono" style="font-size:11px;color:var(--text2)">${r.instructor||'—'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  // Pagination
+  const pages = Math.ceil(total / PAGE_SIZE);
+  const pb = document.getElementById('pageBtns');
+  pb.innerHTML = '';
+  for (let i = 1; i <= pages; i++) {
+    pb.innerHTML += `<div class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</div>`;
+  }
+  updateBulkActions();
+}
+
+function goPage(p) { currentPage = p; renderJournal(); }
+
+function toggleAll(cb) {
+  const page = filteredRecords.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+  page.forEach(r => { cb.checked ? selectedIds.add(r.id) : selectedIds.delete(r.id); });
+  renderJournal();
+}
+
+function toggleSelect(id, cb) {
+  cb.checked ? selectedIds.add(id) : selectedIds.delete(id);
+  updateBulkActions();
+}
+
+function updateBulkActions() {
+  const el = document.getElementById('bulkActions');
+  if (el) el.style.display = selectedIds.size > 0 ? 'flex' : 'none';
+  document.getElementById('selectedInfo').textContent = selectedIds.size > 0 ? `Выбрано: ${selectedIds.size}` : '';
+}
+
+function resetFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterMonth').value = '';
+  document.getElementById('filterEnterprise').value = '';
+  document.getElementById('filterCourse').value = '';
+  const fi = document.getElementById('filterInstructor');
+  if (fi) fi.value = '';
+  filterRecords();
+}
+
+function updateFilterOptions() {
+  const months = [...new Set(db.records.map(r=>r.month))].filter(Boolean);
+  const enterprises = [...new Set(db.records.map(r=>r.enterprise))].filter(Boolean).sort();
+  const courses = [...new Set(db.records.map(r=>r.course))].filter(Boolean).sort();
+  const instructors = [...new Set(db.records.map(r=>r.instructor||'').filter(Boolean))].sort();
+
+  fillSelect('filterMonth', months);
+  fillSelect('filterEnterprise', enterprises);
+  fillSelect('filterCourse', courses);
+  fillSelect('filterInstructor', instructors);
+}
+
+function fillSelect(id, items, sortFn) {
+  const sel = document.getElementById(id);
+  const val = sel.value;
+  const first = sel.options[0].outerHTML;
+  sel.innerHTML = first + items.map(i => `<option value="${i}">${i}</option>`).join('');
+  sel.value = val;
+}
+
+function saveInstructor() {
+  const val = document.getElementById('f_instructor').value.trim();
+  if (!val) { toast('Введите имя инструктора', 'error'); return; }
+  if (!db.instructors) db.instructors = [];
+  if (db.instructors.includes(val)) { toast('Инструктор уже в списке', 'error'); return; }
+  db.instructors.push(val);
+  markDirty();
+  updateAutocompleteLists();
+  toast(`Инструктор "${val}" добавлен в справочник`, 'success');
+}
+
+function removeInstructor(name) {
+  if (!db.instructors) return;
+  db.instructors = db.instructors.filter(i => i !== name);
+  markDirty();
+  updateAutocompleteLists();
+}
+
+function updateAutocompleteLists() {
+  // Enterprises: deduplicate, also treat Latin ERG == Cyrillic ЕРГ
+  const toLatinKey = s => s.toLowerCase().replace(/["'«»\s]/g,'').replace(/е/g,'e').replace(/р/g,'r').replace(/г/g,'g').replace(/а/g,'a').replace(/с/g,'s').replace(/о/g,'o').replace(/т/g,'t').replace(/к/g,'k');
+  const entMap = new Map();
+  [...REF.enterprises, ...(db.customEnterprises||[]), ...[...new Set(db.records.map(r=>r.enterprise))].filter(Boolean)]
+    .forEach(e => { const k = toLatinKey(e); if (!entMap.has(k)) entMap.set(k, e); });
+  const allEnterprises = [...entMap.values()].sort();
+
+  const dbCourses = [...new Set(db.records.map(r=>r.course))].filter(Boolean);
+  const allCourses = [...new Set([...(db.customCourses||[]), ...dbCourses])].sort();
+
+  const savedInstructors = db.instructors || [];
+  const dbInstructors = [...new Set(db.records.map(r=>r.instructor))].filter(Boolean);
+  const allInstructors = [...new Set([...REF.instructors, ...savedInstructors, ...dbInstructors])].sort();
+
+  const dbPositions = [...new Set(db.records.map(r=>r.position))].filter(Boolean);
+  const allPositions = [...new Set([...REF.positions, ...dbPositions])].sort();
+
+  const esc = s => s.replace(/"/g, '&quot;');
+  document.getElementById('list_enterprises').innerHTML = allEnterprises.map(e=>`<option value="${esc(e)}">`).join('');
+  document.getElementById('list_courses').innerHTML = allCourses.map(e=>`<option value="${esc(e)}">`).join('');
+  document.getElementById('list_instructors').innerHTML = allInstructors.map(e=>`<option value="${esc(e)}">`).join('');
+  document.getElementById('list_positions').innerHTML = allPositions.map(e=>`<option value="${esc(e)}">`).join('');
+
+  // Render instructor tags (saved custom instructors)
+  const tagEl = document.getElementById('instructorTags');
+  if (tagEl) {
+    tagEl.innerHTML = savedInstructors.length
+      ? savedInstructors.map(i => `<span class="instr-tag">${i}<button onclick="removeInstructor('${esc(i)}')" title="Удалить из списка">✕</button></span>`).join('')
+      : '';
+  }
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+function exportCSV() {
+  const rows = [['Дата','Месяц','Предприятие','Цех','Табельный №','ФИО','Должность','Курс','% прохождения','Часы','Инструктор']];
+  filteredRecords.forEach(r => rows.push([r.date,r.month,r.enterprise,r.department,r.tabNumber,r.fullName,r.position,r.course,r.completion,r.hours,r.instructor]));
+  const csv = rows.map(r => r.map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(',')).join('\n');
+  downloadText('\uFEFF' + csv, 'vr_export.csv', 'text/csv;charset=utf-8');
+  toast('CSV скачан', 'success');
+}
+
+function exportJSON() {
+  downloadText(JSON.stringify(db, null, 2), 'vr_training_backup.json', 'application/json');
+  toast('JSON резервная копия скачана', 'success');
+}
+
+function exportExcelFull() {
+  if (!window.XLSX) { toast('SheetJS не загружен', 'error'); return; }
+  const wb = XLSX.utils.book_new();
+  const byMonth = {};
+  db.records.forEach(r => {
+    const m = r.month || 'Без месяца';
+    if (!byMonth[m]) byMonth[m] = [];
+    byMonth[m].push(r);
+  });
+  MONTHS.forEach(month => {
+    const recs = byMonth[month];
+    if (!recs || !recs.length) return;
+    const data = [['№','Предприятие','Табельный №','ФИО','Должность/профессия','Курс обучения','Дата обучения','% прохождения','Инструктор']];
+    recs.forEach((r,i) => data.push([i+1,r.enterprise,r.tabNumber,r.fullName,r.position,r.course,r.date,r.completion,r.instructor]));
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [5,14,12,24,24,28,12,8,16].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb, ws, month);
+  });
+  if (wb.SheetNames.length === 0) { toast('Нет данных для экспорта', 'error'); return; }
+  XLSX.writeFile(wb, 'Обученные_VR_по_площадкам.xlsx');
+  toast('Excel файл скачан', 'success');
+}
+
+function exportSummaryExcel() {
+  if (!window.XLSX) { toast('SheetJS не загружен', 'error'); return; }
+  // Build enterprise × course × month matrix
+  const matrix = {};
+  db.records.forEach(r => {
+    if (!matrix[r.enterprise]) matrix[r.enterprise] = {};
+    if (!matrix[r.enterprise][r.course]) matrix[r.enterprise][r.course] = {};
+    const m = r.month;
+    matrix[r.enterprise][r.course][m] = (matrix[r.enterprise][r.course][m]||0)+1;
+  });
+  const header = ['Предприятие','Вид обучения','Итого обучено',...MONTHS];
+  const rows = [header];
+  Object.entries(matrix).forEach(([ent, courses]) => {
+    let entTotal = 0;
+    const entMonths = new Array(12).fill(0);
+    Object.entries(courses).forEach(([course, months]) => {
+      const total = Object.values(months).reduce((a,b)=>a+b,0);
+      entTotal += total;
+      const mArr = MONTHS.map((m,i) => { entMonths[i]+=(months[m]||0); return months[m]||''; });
+      rows.push([ent, course, total, ...mArr]);
+    });
+    rows.splice(rows.findIndex(r=>r[0]===ent), 0, [ent,'',entTotal,...entMonths]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [20,36,8,...Array(12).fill(8)].map(w=>({wch:w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Факт 2026');
+  XLSX.writeFile(wb, 'Факт_обучения_VR.xlsx');
+  toast('Сводный Excel скачан', 'success');
+}
+
+function showImportProgress(label, pct) {
+  const p = document.getElementById('importPreview');
+  p.style.display = 'block';
+  document.getElementById('importProgressBar').style.display = 'block';
+  document.getElementById('importProgressLabel').textContent = label;
+  document.getElementById('importProgressFill').style.width = pct + '%';
+  document.getElementById('importResultBody').innerHTML = '';
+}
+
+function showImportResult(rows) {
+  document.getElementById('importProgressBar').style.display = 'none';
+  const html = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="background:var(--card2)">
+      ${rows[0].map(h=>`<th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;border-bottom:1px solid var(--border)">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${rows.slice(1).map(row=>`<tr>${row.map(v=>`<td style="padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text2)">${v}</td>`).join('')}</tr>`).join('')}
+    </tbody>
+  </table>`;
+  document.getElementById('importResultBody').innerHTML = html;
+}
+
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  showImportProgress('Читаем JSON файл…', 30);
+  document.getElementById('importPreviewTitle').textContent = 'Импорт из JSON: ' + file.name;
+  const reader = new FileReader();
+  reader.onerror = () => { toast('Не удалось прочитать файл', 'error'); document.getElementById('importPreview').style.display='none'; };
+  reader.onload = e => {
+    showImportProgress('Разбираем данные…', 70);
+    try {
+      const text = e.target.result.replace(/^\uFEFF/, '');
+      const imported = JSON.parse(text);
+      if (!imported || !Array.isArray(imported.records)) {
+        toast('Неверный формат JSON — не найдено поле "records"', 'error');
+        document.getElementById('importPreview').style.display='none'; return;
+      }
+      const existingIds = new Set(db.records.map(r => r.id));
+      const newRecs = imported.records.filter(nr => nr.id && !existingIds.has(nr.id));
+      const dupCount = imported.records.length - newRecs.length;
+      db.records.push(...newRecs);
+      markDirty(); refreshAll();
+      showImportProgress('Готово', 100);
+      showImportResult([
+        ['Параметр','Значение'],
+        ['Файл', file.name],
+        ['Всего записей в файле', imported.records.length],
+        ['Добавлено новых', newRecs.length],
+        ['Пропущено дублей', dupCount],
+        ['Итого в базе', db.records.length],
+      ]);
+      toast(`Импортировано ${newRecs.length} записей`, 'success');
+    } catch(ex) {
+      console.error('JSON import error:', ex);
+      toast('Ошибка JSON: ' + ex.message, 'error');
+      document.getElementById('importPreview').style.display='none';
+    }
+  };
+  reader.readAsText(file, 'UTF-8');
+  event.target.value = '';
+}
+
+function importExcel(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!window.XLSX) {
+    toast('Библиотека XLSX не загружена — проверьте интернет и перезагрузите страницу', 'error');
+    return;
+  }
+  showImportProgress('Читаем Excel файл…', 20);
+  document.getElementById('importPreviewTitle').textContent = 'Импорт из Excel: ' + file.name;
+  const reader = new FileReader();
+  reader.onerror = () => { toast('Не удалось прочитать файл', 'error'); document.getElementById('importPreview').style.display='none'; };
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: false, raw: true });
+      showImportProgress('Обрабатываем данные… (листов: ' + wb.SheetNames.length + ')', 60);
+      let added = 0, skipped = 0;
+
+      wb.SheetNames.forEach(shName => {
+        const ws = wb.Sheets[shName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+        if (!rows || rows.length < 2) return;
+
+        // Find header row — search first 10 rows for key words
+        let headerIdx = 0;
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          const rowText = rows[i].map(c => String(c || '').toLowerCase()).join(' ');
+          if (rowText.includes('фамилия') || rowText.includes('фио') || rowText.includes('ф.и.о')) {
+            headerIdx = i; break;
+          }
+        }
+
+        // Build column map from header names
+        const headers = rows[headerIdx].map(c => String(c || '').toLowerCase().trim());
+        const col = {};
+        headers.forEach((h, i) => {
+          if (h.includes('фамилия') || h === 'фио' || h.includes('ф.и.о')) col.name = i;
+          else if (h.includes('табельн'))                                    col.tab = i;
+          else if (h.includes('предприяти'))                                 col.enterprise = i;
+          else if (h.includes('цех') || h.includes('подразд'))               col.dept = i;
+          else if (h.includes('должност') || h.includes('профессия'))        col.position = i;
+          // '%' / 'прохождени' MUST come before 'курс' —
+          // «% прохождения курса» contains 'курс' and would otherwise map to col.course!
+          else if (h.includes('%') || h.includes('процент') || h.includes('прохождени')) col.completion = i;
+          else if (h.includes('тема') || h.includes('курс') || h.includes('вид обучения')) col.course = i;
+          else if (h.includes('дата'))                                       col.date = i;
+          else if (h.includes('месяц'))                                      col.month = i;
+          else if (h.includes('час'))                                        col.hours = i;
+          else if (h.includes('инструктор') || h.includes('проводивший'))   col.instructor = i;
+        });
+
+        // Fallback: if not enough columns detected, use fixed positions
+        // (Format: №, Месяц, Дата, Часы, Предприятие, Цех, Таб.№, ФИО, Должность, Тема, %, Инструктор)
+        if (Object.keys(col).length < 3) {
+          col.month = 1; col.date = 2; col.hours = 3;
+          col.enterprise = 4; col.dept = 5; col.tab = 6;
+          col.name = 7; col.position = 8; col.course = 9;
+          col.completion = 10; col.instructor = 11;
+        }
+
+        const get = (row, key) => {
+          const idx = col[key];
+          return (idx !== undefined && idx < row.length) ? String(row[idx] ?? '').trim() : '';
+        };
+
+        const parseExcelDate = (raw) => {
+          if (raw === '' || raw === null || raw === undefined) return '';
+          // Excel serial number (days since 1900-01-01)
+          if (typeof raw === 'number' && raw > 40000 && raw < 60000) {
+            const d = new Date(Math.round((raw - 25569) * 86400 * 1000));
+            return d.toISOString().slice(0, 10);
+          }
+          const str = String(raw).trim();
+          if (!str) return '';
+          // Try ISO or common formats
+          const d = new Date(str);
+          return isNaN(d.getTime()) ? str : d.toISOString().slice(0, 10);
+        };
+
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.every(c => c === '' || c === null || c === undefined)) continue;
+
+          const name  = get(row, 'name');
+          const tab   = get(row, 'tab');
+          const course = get(row, 'course');
+
+          // Skip rows without essential data
+          if (!name && !tab) { skipped++; continue; }
+          if (!course)       { skipped++; continue; }
+
+          const date  = parseExcelDate(col.date !== undefined ? row[col.date] : '');
+          let month   = get(row, 'month');
+          if (!month && date) {
+            const d = new Date(date);
+            if (!isNaN(d.getTime())) month = MONTHS[d.getMonth()];
+          }
+
+          db.records.push({
+            id: generateId(),
+            date, month,
+            enterprise:  get(row, 'enterprise'),
+            department:  get(row, 'dept'),
+            tabNumber:   tab,
+            fullName:    name,
+            position:    get(row, 'position'),
+            course,
+            completion:  parseInt(get(row, 'completion')) || 0,
+            hours:       parseInt(get(row, 'hours'))      || 8,
+            instructor:  get(row, 'instructor'),
+            createdAt:   new Date().toISOString()
+          });
+          added++;
+        }
+      });
+
+      if (added === 0 && skipped === 0) {
+        toast('Данные не найдены — проверьте формат файла', 'error');
+        document.getElementById('importPreview').style.display='none';
+      } else {
+        markDirty(); refreshAll();
+        showImportProgress('Готово', 100);
+        showImportResult([
+          ['Параметр','Значение'],
+          ['Файл', file.name],
+          ['Листов обработано', wb.SheetNames.length],
+          ['Добавлено записей', added],
+          ['Пропущено пустых строк', skipped],
+          ['Итого в базе', db.records.length],
+        ]);
+        toast(`Импортировано: ${added} записей`, 'success');
+      }
+    } catch(ex) {
+      console.error('Excel import error:', ex);
+      toast('Ошибка импорта: ' + ex.message, 'error');
+      document.getElementById('importPreview').style.display='none';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  event.target.value = '';
+}
+
+function confirmClear() {
+  showModal('Очистить всю базу данных?', 'Это действие удалит ВСЕ ' + db.records.length + ' записей без возможности восстановления. Рекомендуется сначала сделать резервную копию.', () => {
+    db.records = [];
+    markDirty(); refreshAll(); closeModal();
+    toast('База данных очищена', 'success');
+  });
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function formatDate(d) {
+  if (!d) return '—';
+  const [y,m,day] = d.split('-');
+  return `${day}.${m}.${y}`;
+}
+
+function renderProgress(pct) {
+  if (!pct) return '<span style="color:var(--text3)">—</span>';
+  const color = pct >= 80 ? 'var(--green)' : pct >= 60 ? 'var(--gold)' : 'var(--red)';
+  return `<div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div><span class="progress-val">${pct}%</span></div>`;
+}
+
+function downloadText(text, filename, type) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function toast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+  if (name === 'journal') filterRecords();
+  if (name === 'refs') renderRefs();
+}
+
+function showModal(title, text, onConfirm) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalText').textContent = text;
+  document.getElementById('modalConfirmBtn').onclick = onConfirm;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+
+// Close modal on overlay click
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ============================================================
+// СПРАВОЧНИКИ (Reference manager)
+// ============================================================
+function renderRefs() {
+  renderRefTable('refCoursesBody', getAllCourses(), 'course', renameCourse, deleteRefCourse);
+  renderRefTable('refEntBody',     getAllEnterprises(), 'enterprise', renameEnterprise, deleteRefEnterprise);
+}
+
+function getAllCourses() {
+  const counts = {};
+  db.records.forEach(r => { if (r.course) counts[r.course] = (counts[r.course]||0)+1; });
+  const fromRef = (db.customCourses||[]).filter(n => !counts[n]);
+  fromRef.forEach(n => { counts[n] = 0; });
+  return Object.entries(counts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
+}
+
+function getAllEnterprises() {
+  const counts = {};
+  db.records.forEach(r => { if (r.enterprise) counts[r.enterprise] = (counts[r.enterprise]||0)+1; });
+  const fromRef = (db.customEnterprises||[]).filter(n => !counts[n]);
+  fromRef.forEach(n => { counts[n] = 0; });
+  return Object.entries(counts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
+}
+
+function renderRefTable(tbodyId, entries, field, renameFn, deleteFn) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">Нет данных</td></tr>';
+    return;
+  }
+  const safeId = (s) => s.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_').slice(0,40);
+  tbody.innerHTML = entries.map(([name, cnt]) => {
+    const id = safeId(name) + '_' + tbodyId;
+    const esc = name.replace(/'/g, "\'").replace(/"/g, '&quot;');
+    return `<tr>
+      <td style="font-size:13px">${name}</td>
+      <td class="ref-count ${cnt > 0 ? 'has-records' : 'no-records'}">${cnt > 0 ? cnt : '—'}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <input class="ref-rename-input" id="inp_${id}" value="${esc}" placeholder="Новое название">
+          <button class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="${renameFn.name}('${esc}', document.getElementById('inp_${id}').value)">✏ Применить</button>
+        </div>
+      </td>
+      <td><button class="btn btn-danger btn-sm" onclick="${deleteFn.name}('${esc}', ${cnt})" title="Удалить">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renameCourse(oldName, newName) {
+  newName = newName.trim();
+  if (!newName || newName === oldName) { toast('Введите новое название', 'error'); return; }
+  let count = 0;
+  db.records.forEach(r => { if (r.course === oldName) { r.course = newName; count++; } });
+  if (db.customCourses) db.customCourses = db.customCourses.map(c => c === oldName ? newName : c);
+  markDirty(); refreshAll(); renderRefs();
+  toast(`Переименовано: «${oldName}» → «${newName}» (затронуто записей: ${count})`, 'success');
+}
+
+function deleteRefCourse(name, cnt) {
+  if (cnt > 0) {
+    showModal('Удалить курс из справочника?',
+      `Курс «${name}» используется в ${cnt} записях. При удалении из справочника записи СОХРАНЯТСЯ, курс просто исчезнет из подсказок.`,
+      () => { _removeCustomCourse(name); closeModal(); });
+  } else {
+    _removeCustomCourse(name);
+  }
+}
+
+function _removeCustomCourse(name) {
+  if (db.customCourses) db.customCourses = db.customCourses.filter(c => c !== name);
+  markDirty(); refreshAll(); renderRefs();
+  toast(`Курс «${name}» удалён из справочника`, 'success');
+}
+
+function addRefCourse() {
+  const val = document.getElementById('newCourseName').value.trim();
+  if (!val) { toast('Введите название курса', 'error'); return; }
+  if (!db.customCourses) db.customCourses = [];
+  if (db.customCourses.includes(val)) { toast('Курс уже есть в справочнике', 'error'); return; }
+  db.customCourses.push(val);
+  document.getElementById('newCourseName').value = '';
+  markDirty(); refreshAll(); renderRefs();
+  toast(`Курс «${val}» добавлен`, 'success');
+}
+
+function renameEnterprise(oldName, newName) {
+  newName = newName.trim();
+  if (!newName || newName === oldName) { toast('Введите новое название', 'error'); return; }
+  let count = 0;
+  db.records.forEach(r => { if (r.enterprise === oldName) { r.enterprise = newName; count++; } });
+  if (db.customEnterprises) db.customEnterprises = db.customEnterprises.map(e => e === oldName ? newName : e);
+  markDirty(); refreshAll(); renderRefs();
+  toast(`Переименовано: «${oldName}» → «${newName}» (затронуто записей: ${count})`, 'success');
+}
+
+function deleteRefEnterprise(name, cnt) {
+  if (cnt > 0) {
+    showModal('Удалить предприятие из справочника?',
+      `Предприятие «${name}» используется в ${cnt} записях. Записи сохранятся.`,
+      () => { _removeCustomEnt(name); closeModal(); });
+  } else { _removeCustomEnt(name); }
+}
+
+function _removeCustomEnt(name) {
+  if (db.customEnterprises) db.customEnterprises = db.customEnterprises.filter(e => e !== name);
+  markDirty(); refreshAll(); renderRefs();
+  toast(`Предприятие «${name}» удалено из справочника`, 'success');
+}
+
+function addRefEnterprise() {
+  const val = document.getElementById('newEntName').value.trim();
+  if (!val) { toast('Введите название предприятия', 'error'); return; }
+  if (!db.customEnterprises) db.customEnterprises = [];
+  if (db.customEnterprises.includes(val)) { toast('Предприятие уже есть в справочнике', 'error'); return; }
+  db.customEnterprises.push(val);
+  document.getElementById('newEntName').value = '';
+  markDirty(); refreshAll(); renderRefs();
+  toast(`Предприятие «${val}» добавлено`, 'success');
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
+  updateAutocompleteLists();
+  // Set default date to today
+  document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  refreshAll();
+
+  // Warn before leaving with unsaved changes
+  window.addEventListener('beforeunload', e => {
+    if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // Auto-load database from Supabase
+  if (SUPABASE_URL.startsWith('https://YOUR-')) {
+    setFileStatus('red', '❌ Supabase не настроен');
+    toast('Откройте HTML в редакторе и впишите ваши SUPABASE_URL и SUPABASE_KEY', 'error');
+    return;
+  }
+  await loadDB();
+});
+</script>
+</body>
+</html>
