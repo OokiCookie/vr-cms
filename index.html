@@ -517,6 +517,12 @@ select option { background: var(--card2); }
   <div class="nav-tab" onclick="switchTab('refs', this)">
     🗂 Справочники
   </div>
+  <div class="nav-tab" onclick="switchTab('trash', this)">
+    🗑 Корзина <span class="tab-count" id="trashCount">0</span>
+  </div>
+  <div class="nav-tab" onclick="switchTab('history', this)">
+    🕐 История
+  </div>
 </div>
 
 <!-- CONTENT -->
@@ -786,6 +792,82 @@ select option { background: var(--card2); }
     </div>
   </div>
 
+  <!-- TRASH TAB -->
+  <div class="tab-pane" id="tab-trash">
+    <div class="section-header">
+      <div class="section-title">Корзина</div>
+      <div style="font-size:12px;color:var(--text2)">Удалённые записи хранятся 30 дней, затем удаляются навсегда автоматически</div>
+    </div>
+    <div class="filter-row">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="trashSearch" placeholder="Поиск по ФИО, табельному, курсу..." oninput="renderTrash()">
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="restoreAllTrash()">↩ Восстановить всё</button>
+      <button class="btn btn-danger btn-sm" onclick="emptyTrash()">🗑 Очистить корзину</button>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Удалено</th>
+              <th>Дата</th>
+              <th>Предприятие</th>
+              <th>Таб. №</th>
+              <th>ФИО</th>
+              <th>Курс</th>
+              <th>%</th>
+              <th>Осталось дней</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="trashBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY TAB -->
+  <div class="tab-pane" id="tab-history">
+    <div class="section-header">
+      <div class="section-title">История изменений</div>
+      <div style="font-size:12px;color:var(--text2)">Записи старше 30 дней удаляются автоматически</div>
+    </div>
+    <div class="filter-row">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="historySearch" placeholder="Поиск по тексту события..." oninput="renderHistory()">
+      </div>
+      <select class="filter-select" id="historyFilterAction" onchange="renderHistory()">
+        <option value="">Все типы событий</option>
+        <option value="add">Добавления</option>
+        <option value="update">Изменения</option>
+        <option value="delete">Удаления</option>
+        <option value="restore">Восстановления</option>
+        <option value="rename">Переименования</option>
+        <option value="import">Импорты</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="loadHistory()">🔄 Обновить</button>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:160px">Когда</th>
+              <th style="width:130px">Тип</th>
+              <th>Описание</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="3" style="text-align:center;color:var(--text3);padding:30px">Загрузка истории…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- EXPORT TAB -->
   <div class="tab-pane" id="tab-export">
     <div class="section-header">
@@ -935,6 +1017,12 @@ const SB_HEADERS = {
 // Deep clone via JSON. Used to snapshot db state.
 function cloneDB(obj) { return JSON.parse(JSON.stringify(obj)); }
 
+// Returns only non-deleted records. Use this for ALL display, statistics, filters and exports.
+// Use db.records directly only when adding/modifying records or working with the trash.
+function activeRecords() {
+  return db.records.filter(r => !r.deleted);
+}
+
 // Fetch latest db from cloud. Returns parsed db object or null on error.
 async function fetchCloudDB() {
   const res = await fetch(
@@ -954,11 +1042,21 @@ async function loadDB() {
   setFileStatus('yellow', '⏳ Загрузка из облака…');
   try {
     db = await fetchCloudDB();
+    // Auto-purge trashed records older than retention period.
+    const purged = purgeOldTrash();
     baseSnapshot = cloneDB(db);
     isDirty = false;
     setFileStatus('green', '☁ Сохранено');
     document.getElementById('saveBtn').disabled = true;
     refreshAll();
+    // If we purged old trash, mark dirty so it gets saved (without audit log noise).
+    if (purged > 0) {
+      console.log(`Auto-purged ${purged} old trashed records`);
+      isDirty = true;
+      document.getElementById('saveBtn').disabled = false;
+      // Trigger save without going through markDirty (no autosave timer needed)
+      setTimeout(() => saveDB({ silent: true }), 100);
+    }
     return true;
   } catch(e) {
     console.error('loadDB error:', e);
@@ -1038,6 +1136,9 @@ async function saveDB(opts = {}) {
 
   setFileStatus('yellow', '⏳ Сохранение…');
   try {
+    // 0. Compute audit events (what WE changed since last sync) BEFORE merging
+    const auditEvents = computeAuditEvents(baseSnapshot, db);
+
     // 1. Read current cloud version
     const cloud = await fetchCloudDB();
 
@@ -1076,6 +1177,9 @@ async function saveDB(opts = {}) {
     isDirty = false;
     document.getElementById('saveBtn').disabled = true;
     setFileStatus('green', '☁ Сохранено');
+
+    // 6. Log audit events to Supabase (fire-and-forget — don't block save success)
+    if (auditEvents.length) logAuditEvents(auditEvents);
 
     if (conflicted) {
       // Re-render so user sees merged state
@@ -1185,21 +1289,27 @@ function addRecord() {
 }
 
 function deleteRecord(id) {
-  db.records = db.records.filter(r => r.id !== id);
+  const rec = db.records.find(r => r.id === id);
+  if (!rec) return;
+  rec.deleted = true;
+  rec.deletedAt = new Date().toISOString();
   markDirty();
   refreshAll();
-  toast('Запись удалена', 'success');
+  toast('Запись перемещена в корзину', 'success');
 }
 
 function deleteSelected() {
   if (selectedIds.size === 0) return;
-  showModal('Удалить записи?', `Будет удалено ${selectedIds.size} записей. Это действие необратимо.`, () => {
-    db.records = db.records.filter(r => !selectedIds.has(r.id));
+  showModal('Удалить записи?', `Будет перемещено в корзину ${selectedIds.size} записей. Они будут безвозвратно удалены через 30 дней.`, () => {
+    const now = new Date().toISOString();
+    db.records.forEach(r => {
+      if (selectedIds.has(r.id)) { r.deleted = true; r.deletedAt = now; }
+    });
     selectedIds.clear();
     markDirty();
     refreshAll();
     closeModal();
-    toast('Записи удалены', 'success');
+    toast('Записи перемещены в корзину', 'success');
   });
 }
 
@@ -1208,7 +1318,7 @@ function checkDuplicate() {
   const course = document.getElementById('f_course').value.trim();
   const month = getSelectedMonth();
   if (!tab || !course || !month) { document.getElementById('dupWarning').style.display = 'none'; return; }
-  const dup = db.records.find(r => r.tabNumber === tab && r.course === course && r.month === month);
+  const dup = activeRecords().find(r => r.tabNumber === tab && r.course === course && r.month === month);
   document.getElementById('dupWarning').style.display = dup ? 'flex' : 'none';
 }
 
@@ -1240,13 +1350,18 @@ function refreshAll() {
   filterRecords();
   updateFilterOptions();
   updateAutocompleteLists();
-  document.getElementById('journalCount').textContent = db.records.length;
-  const noData = db.records.length === 0;
+  const active = activeRecords();
+  const trashed = db.records.filter(r => r.deleted);
+  document.getElementById('journalCount').textContent = active.length;
+  document.getElementById('trashCount').textContent = trashed.length;
+  const noData = active.length === 0;
   document.getElementById('noDataMsg').style.display = noData ? 'flex' : 'none';
+  // Refresh trash view if it's currently visible
+  if (document.getElementById('tab-trash').classList.contains('active')) renderTrash();
 }
 
 function updateKPIs() {
-  const recs = db.records;
+  const recs = activeRecords();
   document.getElementById('kpiTotal').textContent = recs.length.toLocaleString('ru');
   const now = new Date();
   const curMonth = MONTHS[now.getMonth()];
@@ -1334,21 +1449,22 @@ function renderHTMLBarChart(containerId, labels, data, color) {
 }
 
 function updateCharts() {
+  const recs = activeRecords();
   // Monthly chart
   const monthCounts = {};
   MONTHS.forEach(m => monthCounts[m] = 0);
-  db.records.forEach(r => { if (r.month) monthCounts[r.month] = (monthCounts[r.month]||0)+1; });
+  recs.forEach(r => { if (r.month) monthCounts[r.month] = (monthCounts[r.month]||0)+1; });
   updateBarChart('chartMonths', MONTHS, MONTHS.map(m => monthCounts[m]), '#1a6ef5');
 
   // Enterprise donut
   const entCounts = {};
-  db.records.forEach(r => { entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
+  recs.forEach(r => { entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
   const entSorted = Object.entries(entCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
   updateDonut('chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]));
 
   // Top courses – wrap long labels into multiple lines for Chart.js
   const coCounts = {};
-  db.records.forEach(r => {
+  recs.forEach(r => {
     const name = String(r.course||'').trim();
     if (name) coCounts[name] = (coCounts[name]||0)+1;
   });
@@ -1457,7 +1573,7 @@ function updateHBarChart(id, labels, data, color) {
 }
 
 function renderRecentDash() {
-  const recent = [...db.records].reverse().slice(0, 20);
+  const recent = [...activeRecords()].reverse().slice(0, 20);
   const tbody = document.getElementById('dashRecentBody');
   if (!recent.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет данных</td></tr>'; return; }
   tbody.innerHTML = recent.map(r => `
@@ -1472,12 +1588,13 @@ function renderRecentDash() {
 }
 
 function renderRecentInput() {
-  const recent = [...db.records].reverse().slice(0, 10);
+  const active = activeRecords();
+  const recent = [...active].reverse().slice(0, 10);
   const tbody = document.getElementById('recentBody');
   if (!recent.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:30px">Нет записей</td></tr>'; return; }
   tbody.innerHTML = recent.map((r, i) => `
     <tr>
-      <td class="mono" style="color:var(--text3)">${db.records.length - i}</td>
+      <td class="mono" style="color:var(--text3)">${active.length - i}</td>
       <td class="mono">${formatDate(r.date)}</td>
       <td class="mono">${r.tabNumber}</td>
       <td>${r.fullName}</td>
@@ -1518,7 +1635,7 @@ function filterRecords() {
   const dateFrom  =  rangeMode ? document.getElementById('filterDateFrom').value : '';
   const dateTo    =  rangeMode ? document.getElementById('filterDateTo').value   : '';
 
-  filteredRecords = db.records.filter(r => {
+  filteredRecords = activeRecords().filter(r => {
     if (dateExact && r.date !== dateExact) return false;
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
     if (dateTo && (!r.date || r.date > dateTo)) return false;
@@ -1638,10 +1755,11 @@ function toggleDateRange(useRange) {
 }
 
 function updateFilterOptions() {
-  const months = [...new Set(db.records.map(r=>r.month))].filter(Boolean);
-  const enterprises = [...new Set(db.records.map(r=>r.enterprise))].filter(Boolean).sort();
-  const courses = [...new Set(db.records.map(r=>r.course))].filter(Boolean).sort();
-  const instructors = [...new Set(db.records.map(r=>r.instructor||'').filter(Boolean))].sort();
+  const recs = activeRecords();
+  const months = [...new Set(recs.map(r=>r.month))].filter(Boolean);
+  const enterprises = [...new Set(recs.map(r=>r.enterprise))].filter(Boolean).sort();
+  const courses = [...new Set(recs.map(r=>r.course))].filter(Boolean).sort();
+  const instructors = [...new Set(recs.map(r=>r.instructor||'').filter(Boolean))].sort();
 
   fillSelect('filterMonth', months);
   fillSelect('filterEnterprise', enterprises);
@@ -1676,21 +1794,22 @@ function removeInstructor(name) {
 }
 
 function updateAutocompleteLists() {
+  const recs = activeRecords();
   // Enterprises: deduplicate, also treat Latin ERG == Cyrillic ЕРГ
   const toLatinKey = s => s.toLowerCase().replace(/["'«»\s]/g,'').replace(/е/g,'e').replace(/р/g,'r').replace(/г/g,'g').replace(/а/g,'a').replace(/с/g,'s').replace(/о/g,'o').replace(/т/g,'t').replace(/к/g,'k');
   const entMap = new Map();
-  [...REF.enterprises, ...(db.customEnterprises||[]), ...[...new Set(db.records.map(r=>r.enterprise))].filter(Boolean)]
+  [...REF.enterprises, ...(db.customEnterprises||[]), ...[...new Set(recs.map(r=>r.enterprise))].filter(Boolean)]
     .forEach(e => { const k = toLatinKey(e); if (!entMap.has(k)) entMap.set(k, e); });
   const allEnterprises = [...entMap.values()].sort();
 
-  const dbCourses = [...new Set(db.records.map(r=>r.course))].filter(Boolean);
+  const dbCourses = [...new Set(recs.map(r=>r.course))].filter(Boolean);
   const allCourses = [...new Set([...(db.customCourses||[]), ...dbCourses])].sort();
 
   const savedInstructors = db.instructors || [];
-  const dbInstructors = [...new Set(db.records.map(r=>r.instructor))].filter(Boolean);
+  const dbInstructors = [...new Set(recs.map(r=>r.instructor))].filter(Boolean);
   const allInstructors = [...new Set([...REF.instructors, ...savedInstructors, ...dbInstructors])].sort();
 
-  const dbPositions = [...new Set(db.records.map(r=>r.position))].filter(Boolean);
+  const dbPositions = [...new Set(recs.map(r=>r.position))].filter(Boolean);
   const allPositions = [...new Set([...REF.positions, ...dbPositions])].sort();
 
   const esc = s => s.replace(/"/g, '&quot;');
@@ -1728,7 +1847,7 @@ function exportExcelFull() {
   if (!window.XLSX) { toast('SheetJS не загружен', 'error'); return; }
   const wb = XLSX.utils.book_new();
   const byMonth = {};
-  db.records.forEach(r => {
+  activeRecords().forEach(r => {
     const m = r.month || 'Без месяца';
     if (!byMonth[m]) byMonth[m] = [];
     byMonth[m].push(r);
@@ -1751,7 +1870,7 @@ function exportSummaryExcel() {
   if (!window.XLSX) { toast('SheetJS не загружен', 'error'); return; }
   // Build enterprise × course × month matrix
   const matrix = {};
-  db.records.forEach(r => {
+  activeRecords().forEach(r => {
     if (!matrix[r.enterprise]) matrix[r.enterprise] = {};
     if (!matrix[r.enterprise][r.course]) matrix[r.enterprise][r.course] = {};
     const m = r.month;
@@ -2027,6 +2146,8 @@ function switchTab(name, el) {
   el.classList.add('active');
   if (name === 'journal') filterRecords();
   if (name === 'refs') renderRefs();
+  if (name === 'trash') renderTrash();
+  if (name === 'history') loadHistory();
 }
 
 function showModal(title, text, onConfirm) {
@@ -2052,7 +2173,7 @@ function renderRefs() {
 
 function getAllCourses() {
   const counts = {};
-  db.records.forEach(r => { if (r.course) counts[r.course] = (counts[r.course]||0)+1; });
+  activeRecords().forEach(r => { if (r.course) counts[r.course] = (counts[r.course]||0)+1; });
   const fromRef = (db.customCourses||[]).filter(n => !counts[n]);
   fromRef.forEach(n => { counts[n] = 0; });
   return Object.entries(counts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
@@ -2060,7 +2181,7 @@ function getAllCourses() {
 
 function getAllEnterprises() {
   const counts = {};
-  db.records.forEach(r => { if (r.enterprise) counts[r.enterprise] = (counts[r.enterprise]||0)+1; });
+  activeRecords().forEach(r => { if (r.enterprise) counts[r.enterprise] = (counts[r.enterprise]||0)+1; });
   const fromRef = (db.customEnterprises||[]).filter(n => !counts[n]);
   fromRef.forEach(n => { counts[n] = 0; });
   return Object.entries(counts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
@@ -2164,6 +2285,274 @@ function addRefEnterprise() {
 }
 
 // ============================================================
+// КОРЗИНА (Trash)
+// ============================================================
+const TRASH_RETENTION_DAYS = 30;
+
+// Permanently remove records that have been in trash longer than retention period.
+// Called once on page load. Returns number of records purged.
+function purgeOldTrash() {
+  const cutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const before = db.records.length;
+  db.records = db.records.filter(r => {
+    if (!r.deleted) return true;
+    if (!r.deletedAt) return true; // safety: don't purge if missing timestamp
+    return new Date(r.deletedAt).getTime() > cutoff;
+  });
+  return before - db.records.length;
+}
+
+// Days remaining before this record gets auto-purged
+function trashDaysLeft(rec) {
+  if (!rec.deletedAt) return TRASH_RETENTION_DAYS;
+  const elapsedMs = Date.now() - new Date(rec.deletedAt).getTime();
+  const elapsedDays = Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
+  return Math.max(0, TRASH_RETENTION_DAYS - elapsedDays);
+}
+
+function renderTrash() {
+  const tbody = document.getElementById('trashBody');
+  const search = (document.getElementById('trashSearch')?.value || '').toLowerCase();
+  let trashed = db.records.filter(r => r.deleted);
+  if (search) {
+    trashed = trashed.filter(r =>
+      [r.fullName, r.tabNumber, r.course, r.enterprise, r.position].join(' ').toLowerCase().includes(search)
+    );
+  }
+  // Newest deletions first
+  trashed.sort((a,b) => (b.deletedAt||'').localeCompare(a.deletedAt||''));
+  if (!trashed.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🗑</div><strong>Корзина пуста</strong><p>Удалённые записи будут появляться здесь</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = trashed.map(r => {
+    const days = trashDaysLeft(r);
+    const daysClass = days <= 3 ? 'badge-red' : days <= 7 ? 'badge-gold' : 'badge-green';
+    return `<tr>
+      <td class="mono" style="font-size:11px">${r.deletedAt ? formatDate(r.deletedAt.slice(0,10)) : '—'}</td>
+      <td class="mono">${formatDate(r.date)}</td>
+      <td>${r.enterprise||'—'}</td>
+      <td class="mono">${r.tabNumber||'—'}</td>
+      <td>${r.fullName||'—'}</td>
+      <td>${r.course||'—'}</td>
+      <td><span class="badge badge-blue">${r.completion||0}%</span></td>
+      <td><span class="badge ${daysClass}">${days} дн.</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="restoreFromTrash('${r.id}')" title="Восстановить">↩</button>
+        <button class="btn btn-danger btn-sm" onclick="purgeFromTrash('${r.id}')" title="Удалить навсегда">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function restoreFromTrash(id) {
+  const rec = db.records.find(r => r.id === id);
+  if (!rec) return;
+  delete rec.deleted;
+  delete rec.deletedAt;
+  markDirty(); refreshAll();
+  toast('Запись восстановлена', 'success');
+}
+
+function purgeFromTrash(id) {
+  showModal('Удалить навсегда?', 'Запись будет удалена окончательно, без возможности восстановления.', () => {
+    db.records = db.records.filter(r => r.id !== id);
+    markDirty(); refreshAll(); closeModal();
+    toast('Запись удалена навсегда', 'success');
+  });
+}
+
+function restoreAllTrash() {
+  const trashed = db.records.filter(r => r.deleted);
+  if (!trashed.length) { toast('Корзина пуста', 'success'); return; }
+  showModal('Восстановить все записи?', `Будет восстановлено ${trashed.length} записей.`, () => {
+    db.records.forEach(r => { if (r.deleted) { delete r.deleted; delete r.deletedAt; } });
+    markDirty(); refreshAll(); closeModal();
+    toast(`Восстановлено: ${trashed.length}`, 'success');
+  });
+}
+
+function emptyTrash() {
+  const trashed = db.records.filter(r => r.deleted);
+  if (!trashed.length) { toast('Корзина пуста', 'success'); return; }
+  showModal('Очистить корзину?', `Будет удалено навсегда: ${trashed.length} записей. Это действие необратимо.`, () => {
+    db.records = db.records.filter(r => !r.deleted);
+    markDirty(); refreshAll(); closeModal();
+    toast(`Удалено навсегда: ${trashed.length}`, 'success');
+  });
+}
+
+// ============================================================
+// ИСТОРИЯ ИЗМЕНЕНИЙ (Audit log)
+// ============================================================
+const AUDIT_RETENTION_DAYS = 30;
+let pendingAuditEvents = []; // queue events between saves
+
+// Compute diff between two db snapshots, return array of human-readable events.
+// Used at save time: compares baseSnapshot (last sync) with current db.
+function computeAuditEvents(base, current) {
+  const events = [];
+  if (!base) return events;
+
+  const baseMap = new Map((base.records || []).map(r => [r.id, r]));
+  const curMap  = new Map((current.records || []).map(r => [r.id, r]));
+
+  let added = 0, restored = 0, deleted = 0, updated = 0, purged = 0;
+  const updatedSamples = [];
+
+  for (const [id, cur] of curMap) {
+    const old = baseMap.get(id);
+    if (!old) {
+      // New record in current that wasn't in base
+      if (cur.deleted) continue; // imported as deleted? skip, edge case
+      added++;
+      if (added <= 3) events.push({ action: 'add', summary: `Добавлена запись: ${cur.fullName||'?'} — ${cur.course||'?'}` });
+    } else {
+      // Existed in base
+      if (!old.deleted && cur.deleted) {
+        deleted++;
+        if (deleted <= 3) events.push({ action: 'delete', summary: `В корзину: ${cur.fullName||'?'} — ${cur.course||'?'}` });
+      } else if (old.deleted && !cur.deleted) {
+        restored++;
+        if (restored <= 3) events.push({ action: 'restore', summary: `Восстановлено: ${cur.fullName||'?'} — ${cur.course||'?'}` });
+      } else if (!old.deleted && !cur.deleted) {
+        // Check for content change (excluding deleted/deletedAt)
+        const oldClean = { ...old }; delete oldClean.deleted; delete oldClean.deletedAt;
+        const curClean = { ...cur }; delete curClean.deleted; delete curClean.deletedAt;
+        if (JSON.stringify(oldClean) !== JSON.stringify(curClean)) {
+          updated++;
+          if (updated <= 3) updatedSamples.push(`${cur.fullName||'?'} — ${cur.course||'?'}`);
+        }
+      }
+    }
+  }
+  // Records that existed in base but disappeared completely from current = purged from trash
+  for (const [id, old] of baseMap) {
+    if (!curMap.has(id)) purged++;
+  }
+
+  if (updated > 0) {
+    events.push({ action: 'update', summary: `Изменено записей: ${updated}` + (updatedSamples.length ? ` (${updatedSamples.join(', ')}${updated > 3 ? '…' : ''})` : '') });
+  }
+  // Aggregated counts when many at once (importing, bulk ops)
+  if (added > 3) events.push({ action: 'add', summary: `Всего добавлено: ${added} записей` });
+  if (deleted > 3) events.push({ action: 'delete', summary: `Всего перемещено в корзину: ${deleted}` });
+  if (restored > 3) events.push({ action: 'restore', summary: `Всего восстановлено: ${restored}` });
+  if (purged > 0) events.push({ action: 'delete', summary: `Удалено навсегда: ${purged}` });
+
+  // Reference list changes (rename detection is hard without stable IDs — log as additions only)
+  const baseRef = (key) => new Set(base[key] || []);
+  const curRef  = (key) => new Set(current[key] || []);
+  const compareList = (key, label) => {
+    const b = baseRef(key), c = curRef(key);
+    const addedItems = [...c].filter(x => !b.has(x));
+    const removedItems = [...b].filter(x => !c.has(x));
+    // Heuristic: if equal count added & removed → likely rename
+    if (addedItems.length && removedItems.length && addedItems.length === removedItems.length) {
+      events.push({ action: 'rename', summary: `Переименовано в "${label}": ${removedItems.join(', ')} → ${addedItems.join(', ')}` });
+    } else {
+      addedItems.forEach(x => events.push({ action: 'add', summary: `Добавлено в "${label}": ${x}` }));
+      removedItems.forEach(x => events.push({ action: 'delete', summary: `Удалено из "${label}": ${x}` }));
+    }
+  };
+  compareList('customCourses',     'Курсы');
+  compareList('customEnterprises', 'Предприятия');
+  compareList('instructors',       'Инструкторы');
+
+  return events;
+}
+
+// Push an audit event to Supabase. Called after each successful save.
+async function logAuditEvents(events) {
+  if (!events || !events.length) return;
+  const rows = events.map(e => ({
+    action: e.action,
+    summary: e.summary,
+    created_at: new Date().toISOString()
+  }));
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log`, {
+      method: 'POST',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify(rows)
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.warn('Audit log write failed:', err);
+    }
+  } catch(e) {
+    console.warn('Audit log network error:', e.message);
+  }
+}
+
+// Purge audit_log entries older than retention period. Called once on load.
+async function purgeOldAudit() {
+  const cutoff = new Date(Date.now() - AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/audit_log?created_at=lt.${encodeURIComponent(cutoff)}`, {
+      method: 'DELETE',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' }
+    });
+  } catch(e) {
+    console.warn('Audit purge failed:', e.message);
+  }
+}
+
+let historyCache = []; // most recent fetched events
+
+async function loadHistory() {
+  const tbody = document.getElementById('historyBody');
+  tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:30px">Загрузка истории…</td></tr>';
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/audit_log?select=action,summary,created_at&order=created_at.desc&limit=500`,
+      { headers: SB_HEADERS }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    historyCache = await res.json();
+    renderHistory();
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--red);padding:30px">Ошибка: ${e.message}</td></tr>`;
+  }
+}
+
+function renderHistory() {
+  const tbody = document.getElementById('historyBody');
+  const search = (document.getElementById('historySearch')?.value || '').toLowerCase();
+  const action = document.getElementById('historyFilterAction')?.value || '';
+
+  let events = historyCache;
+  if (action) events = events.filter(e => (e.action||'') === action);
+  if (search) events = events.filter(e => (e.summary||'').toLowerCase().includes(search));
+
+  if (!events.length) {
+    tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state"><div class="empty-icon">🕐</div><strong>Нет событий</strong><p>История изменений появится после сохранений</p></div></td></tr>';
+    return;
+  }
+
+  const actionLabels = {
+    add: '➕ Добавление', update: '✏ Изменение', delete: '🗑 Удаление',
+    restore: '↩ Восстановление', rename: '✏ Переименование', import: '📥 Импорт'
+  };
+  const actionBadges = {
+    add: 'badge-green', update: 'badge-blue', delete: 'badge-red',
+    restore: 'badge-green', rename: 'badge-gold', import: 'badge-blue'
+  };
+
+  tbody.innerHTML = events.map(e => {
+    const dt = new Date(e.created_at);
+    const dateStr = `${formatDate(dt.toISOString().slice(0,10))} ${dt.toTimeString().slice(0,5)}`;
+    const label = actionLabels[e.action] || e.action || '?';
+    const badge = actionBadges[e.action] || 'badge-blue';
+    return `<tr>
+      <td class="mono" style="font-size:12px">${dateStr}</td>
+      <td><span class="badge ${badge}">${label}</span></td>
+      <td>${e.summary||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -2194,6 +2583,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Background poll: pull cloud changes from coworkers every POLL_INTERVAL ms
   pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
+
+  // One-time housekeeping: purge audit log entries older than retention period
+  purgeOldAudit();
 });
 </script>
 </body>
