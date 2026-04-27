@@ -611,12 +611,12 @@ select option { background: var(--card2); }
   <div class="tab-pane active" id="tab-dashboard">
     <div class="section-header pdf-hide" style="margin-bottom:16px">
       <div></div>
-      <button class="btn btn-secondary btn-sm" onclick="exportDashboardPDF()">📄 Экспорт в PDF</button>
+      <button class="btn btn-secondary btn-sm" onclick="openPDFModal('dashboard')">📄 Экспорт в PDF</button>
     </div>
     <div id="noDataMsg" class="alert alert-info" style="display:none">
       ℹ️ Нет данных. Откройте существующую базу или создайте новую, затем добавьте записи через «Ввод данных».
     </div>
-    <div class="kpi-row-top">
+    <div class="kpi-row-top" data-pdf-section="kpi" data-pdf-label="KPI и инструкторы">
       <div class="kpi-left-col">
         <div class="kpi-card">
           <div class="kpi-label">Всего обучено</div>
@@ -637,23 +637,23 @@ select option { background: var(--card2); }
       </div>
     </div>
     <div class="charts-row">
-      <div class="chart-card">
+      <div class="chart-card" data-pdf-section="chartMonths" data-pdf-label="График по месяцам">
         <div class="chart-title">Обучено по месяцам</div>
         <canvas id="chartMonths"></canvas>
       </div>
-      <div class="chart-card">
+      <div class="chart-card" data-pdf-section="chartEnterprises" data-pdf-label="График по предприятиям">
         <div class="chart-title">По предприятиям</div>
         <canvas id="chartEnterprises"></canvas>
       </div>
     </div>
-    <div style="margin-bottom:24px">
+    <div style="margin-bottom:24px" data-pdf-section="topCourses" data-pdf-label="Топ курсы">
       <div class="chart-card">
         <div class="chart-title">Топ курсы</div>
         <div id="chartCourses" style="padding:4px 0"></div>
       </div>
     </div>
     <!-- Recent entries table on dashboard -->
-    <div class="table-wrap">
+    <div class="table-wrap" data-pdf-section="recentRecords" data-pdf-label="Последние 20 записей" data-pdf-default="off">
       <div class="table-header">
         <span class="table-title">Последние 20 записей</span>
       </div>
@@ -1045,6 +1045,36 @@ select option { background: var(--card2); }
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn btn-danger" id="modalConfirmBtn">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<!-- PDF SETTINGS MODAL -->
+<div class="modal-overlay" id="pdfModalOverlay">
+  <div class="modal" style="width:540px">
+    <h2>📄 Экспорт в PDF</h2>
+    <p style="margin-bottom:14px">Выберите ориентацию страницы и содержимое для экспорта.</p>
+
+    <div class="form-group" style="margin-bottom:18px">
+      <label>Ориентация</label>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);cursor:pointer;font-size:13px">
+          <input type="radio" name="pdfOrient" value="portrait"> 📄 Книжная
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);cursor:pointer;font-size:13px">
+          <input type="radio" name="pdfOrient" value="landscape" checked> 🖥 Альбомная
+        </label>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Что включить в PDF</label>
+      <div id="pdfSectionsBox" style="margin-top:6px;display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:22px">
+      <button class="btn btn-secondary" onclick="closePDFModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="confirmPDFExport()">⬇ Скачать PDF</button>
     </div>
   </div>
 </div>
@@ -2722,7 +2752,7 @@ function renderTrainerDetail() {
           <div class="trainer-stat">Всего обучений: <strong id="t_totalCount">—</strong></div>
         </div>
       </div>
-      <button class="btn btn-secondary pdf-hide" onclick="exportTrainerPDF()">📄 Экспорт в PDF</button>
+      <button class="btn btn-secondary pdf-hide" onclick="openPDFModal('trainer')">📄 Экспорт в PDF</button>
     </div>
 
     <div class="trainer-filters pdf-hide">
@@ -2744,7 +2774,7 @@ function renderTrainerDetail() {
       <button class="btn btn-secondary btn-sm" style="align-self:flex-end" onclick="resetTrainerFilters()">✕ Сброс</button>
     </div>
 
-    <div class="trainer-charts-row">
+    <div class="trainer-charts-row" data-pdf-section="t_charts" data-pdf-label="Графики (по месяцам и предприятиям)">
       <div>
         <div class="trainer-section-title">Обучено по месяцам</div>
         <canvas id="t_chartMonths"></canvas>
@@ -2755,12 +2785,12 @@ function renderTrainerDetail() {
       </div>
     </div>
 
-    <div class="trainer-section">
+    <div class="trainer-section" data-pdf-section="t_topCourses" data-pdf-label="Топ курсов">
       <div class="trainer-section-title">Топ курсов</div>
       <div id="t_topCourses"></div>
     </div>
 
-    <div class="trainer-section">
+    <div class="trainer-section" data-pdf-section="t_recent" data-pdf-label="Последние обучения" data-pdf-default="off">
       <div class="trainer-section-title">Последние обучения</div>
       <div class="table-scroll">
         <table>
@@ -2864,43 +2894,115 @@ function resetTrainerFilters() {
 }
 
 // ============================================================
-// PDF EXPORT (html2pdf.js)
+// PDF EXPORT (html2pdf.js) + SETTINGS MODAL
 // ============================================================
-function exportPDF(elementId, filename) {
+let currentPDFTarget = null; // 'dashboard' or 'trainer'
+
+// Build the modal: scan target container for elements with data-pdf-section,
+// create a checkbox for each. Sections with data-pdf-default="off" are unchecked.
+function openPDFModal(target) {
   if (!window.html2pdf) { toast('html2pdf не загружен — проверьте интернет', 'error'); return; }
-  const el = document.getElementById(elementId);
-  if (!el) { toast('Не найден элемент для экспорта', 'error'); return; }
-  // Hide PDF-only-hidden controls during render
+  if (target === 'trainer' && !selectedTrainer) { toast('Сначала выберите тренера', 'error'); return; }
+  currentPDFTarget = target;
+
+  const root = target === 'dashboard'
+    ? document.getElementById('tab-dashboard')
+    : document.getElementById('trainerDetail');
+  const sections = root.querySelectorAll('[data-pdf-section]');
+
+  const box = document.getElementById('pdfSectionsBox');
+  if (!sections.length) {
+    box.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px">Нет настраиваемых секций</div>';
+  } else {
+    box.innerHTML = [...sections].map(el => {
+      const id    = el.getAttribute('data-pdf-section');
+      const label = el.getAttribute('data-pdf-label') || id;
+      const def   = el.getAttribute('data-pdf-default');
+      const checked = def === 'off' ? '' : 'checked';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius2);cursor:pointer;font-size:13px">
+        <input type="checkbox" data-pdf-section-key="${id}" ${checked}> ${label}
+      </label>`;
+    }).join('');
+  }
+  document.getElementById('pdfModalOverlay').classList.add('open');
+}
+
+function closePDFModal() {
+  document.getElementById('pdfModalOverlay').classList.remove('open');
+}
+
+// Read settings from modal, hide unchecked sections, render PDF, restore visibility.
+async function confirmPDFExport() {
+  const orient = document.querySelector('input[name="pdfOrient"]:checked').value;
+  const checks = document.querySelectorAll('#pdfSectionsBox input[type="checkbox"]');
+  const enabled = new Set();
+  checks.forEach(c => { if (c.checked) enabled.add(c.getAttribute('data-pdf-section-key')); });
+
+  closePDFModal();
+
+  const root = currentPDFTarget === 'dashboard'
+    ? document.getElementById('tab-dashboard')
+    : document.getElementById('trainerDetail');
+
+  // Hide sections that are unchecked. Save originals so we can restore.
+  const hidden = [];
+  root.querySelectorAll('[data-pdf-section]').forEach(el => {
+    const id = el.getAttribute('data-pdf-section');
+    if (!enabled.has(id)) {
+      hidden.push([el, el.style.display]);
+      el.style.display = 'none';
+    }
+  });
+
   document.body.classList.add('pdf-rendering');
   toast('Готовим PDF…', 'success');
+
+  // Wait one animation frame so layout reflows before html2canvas measures it.
+  // This is the fix for the "missing enterprise chart" issue: previously html2canvas
+  // grabbed the dashboard before Chart.js finished its responsive resize after pdf-hide
+  // toggled, and one of the donuts ended up at 0×0. Forcing a reflow here fixes it.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // Also nudge Chart.js to redraw any visible canvases at their new container size.
+  Object.values(charts).forEach(c => { try { c.resize(); } catch {} });
+  Object.values(trainerCharts).forEach(c => { try { c.resize(); } catch {} });
+  // Small extra delay for chart animations to settle
+  await new Promise(r => setTimeout(r, 250));
+
+  const dt = new Date().toISOString().slice(0,10);
+  let filename;
+  if (currentPDFTarget === 'dashboard') filename = `Дашборд_VR_${dt}.pdf`;
+  else {
+    const safeName = (selectedTrainer||'').replace(/[^а-яА-Яa-zA-Z0-9 ]/g, '_').trim();
+    filename = `Тренер_${safeName}_${dt}.pdf`;
+  }
+
   const opts = {
-    margin:       [10, 10, 10, 10], // mm
+    margin:       [10, 10, 10, 10],
     filename:     filename,
     image:        { type: 'jpeg', quality: 0.95 },
-    html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: orient },
     pagebreak:    { mode: ['css', 'legacy'] }
   };
-  html2pdf().set(opts).from(el).save()
-    .then(() => { document.body.classList.remove('pdf-rendering'); toast('PDF скачан', 'success'); })
-    .catch(err => {
-      document.body.classList.remove('pdf-rendering');
-      console.error('PDF error:', err);
-      toast('Ошибка PDF: ' + err.message, 'error');
-    });
+
+  try {
+    await html2pdf().set(opts).from(root).save();
+    toast('PDF скачан', 'success');
+  } catch(err) {
+    console.error('PDF error:', err);
+    toast('Ошибка PDF: ' + err.message, 'error');
+  } finally {
+    // Restore hidden sections regardless of success/failure
+    hidden.forEach(([el, orig]) => { el.style.display = orig; });
+    document.body.classList.remove('pdf-rendering');
+  }
 }
 
-function exportDashboardPDF() {
-  const dt = new Date().toISOString().slice(0,10);
-  exportPDF('tab-dashboard', `Дашборд_VR_${dt}.pdf`);
-}
-
-function exportTrainerPDF() {
-  if (!selectedTrainer) { toast('Сначала выберите тренера', 'error'); return; }
-  const dt = new Date().toISOString().slice(0,10);
-  const safeName = selectedTrainer.replace(/[^а-яА-Яa-zA-Z0-9 ]/g, '_').trim();
-  exportPDF('trainerDetail', `Тренер_${safeName}_${dt}.pdf`);
-}
+// Close PDF modal on backdrop click
+document.addEventListener('DOMContentLoaded', () => {
+  const ov = document.getElementById('pdfModalOverlay');
+  if (ov) ov.addEventListener('click', e => { if (e.target === ov) closePDFModal(); });
+});
 
 // ============================================================
 // INIT
