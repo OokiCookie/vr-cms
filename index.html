@@ -476,6 +476,49 @@ select option { background: var(--card2); }
   background: #3a2a10; color: #fbbf24;
   font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700;
 }
+/* INPUT MODE TOGGLE (single record / group) */
+.mode-toggle {
+  display: inline-flex;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  padding: 3px;
+}
+.mode-option {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 13px; font-weight: 500;
+  color: var(--text2);
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+.mode-option:has(input:checked) {
+  background: var(--blue);
+  color: #fff;
+}
+.mode-option input { display: none; }
+/* Group entry rows: inline inputs in table cells */
+#groupRowsBody td { padding: 4px 6px; }
+#groupRowsBody input {
+  width: 100%;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: var(--sans);
+  outline: none;
+}
+#groupRowsBody input:focus { border-color: var(--blue); }
+#groupRowsBody input.mono-input { font-family: var(--mono); }
+#groupRowsBody .row-del-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text3); font-size: 16px; padding: 4px;
+  line-height: 1;
+}
+#groupRowsBody .row-del-btn:hover { color: var(--red); }
 /* TRAINERS PAGE */
 .trainers-layout {
   display: grid;
@@ -739,8 +782,20 @@ select option { background: var(--card2); }
   <div class="tab-pane" id="tab-input">
     <div class="section-header">
       <div class="section-title">Добавить запись об обучении</div>
+      <div class="mode-toggle">
+        <label class="mode-option">
+          <input type="radio" name="inputMode" value="single" checked onchange="switchInputMode('single')">
+          <span>📝 Одна запись</span>
+        </label>
+        <label class="mode-option">
+          <input type="radio" name="inputMode" value="group" onchange="switchInputMode('group')">
+          <span>👥 Группа</span>
+        </label>
+      </div>
     </div>
-    <div class="table-wrap" style="padding:20px;margin-bottom:20px">
+
+    <!-- SINGLE ENTRY FORM -->
+    <div id="singleEntryForm" class="table-wrap" style="padding:20px;margin-bottom:20px">
       <div id="dupWarning" class="alert alert-warn" style="display:none">
         ⚠️ Возможный дубликат: сотрудник с таким табельным номером уже проходил этот курс в этом месяце.
       </div>
@@ -791,6 +846,59 @@ select option { background: var(--card2); }
       <div class="form-actions">
         <button class="btn btn-primary" onclick="addRecord()">✅ Добавить запись</button>
         <button class="btn btn-secondary" onclick="clearForm()">🗑 Очистить</button>
+      </div>
+    </div>
+
+    <!-- GROUP ENTRY FORM -->
+    <div id="groupEntryForm" class="table-wrap" style="padding:20px;margin-bottom:20px;display:none">
+      <div class="alert alert-info">
+        ℹ️ Введите общие данные сверху, добавьте участников ниже. Можно вставить таблицу из Excel (Ctrl+V) — табельный, ФИО, должность, % через табуляцию.
+      </div>
+
+      <div class="form-grid form-grid-2col" style="margin-bottom:18px">
+        <div class="form-group">
+          <label>Дата обучения *</label>
+          <input type="date" id="g_date">
+        </div>
+        <div class="form-group">
+          <label>Предприятие *</label>
+          <input type="text" id="g_enterprise" list="list_enterprises" placeholder="АксЗФ, АО ЕЭК..." autocomplete="off">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Курс обучения *</label>
+          <input type="text" id="g_course" list="list_courses" placeholder="Стропальщик..." autocomplete="off">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Инструктор</label>
+          <input type="text" id="g_instructor" list="list_instructors" placeholder="Смағұл Е. Д." autocomplete="off">
+        </div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">
+        Участники <span id="groupCount" style="color:var(--blue);font-family:var(--mono)">(0)</span>
+      </div>
+      <div class="table-scroll" style="margin-bottom:12px;max-height:400px;overflow-y:auto" id="groupRowsWrap">
+        <table style="font-size:13px">
+          <thead>
+            <tr>
+              <th style="width:140px">Табельный *</th>
+              <th>ФИО *</th>
+              <th>Должность</th>
+              <th style="width:90px">% курса</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody id="groupRowsBody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn btn-secondary btn-sm" onclick="addGroupRow()">+ Добавить участника</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearGroupRows()">🗑 Очистить список</button>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="saveGroup()">✅ Сохранить группу <span id="groupSaveCount"></span></button>
+        <button class="btn btn-secondary" onclick="clearGroupForm()">🗑 Очистить всё</button>
       </div>
     </div>
 
@@ -1116,19 +1224,7 @@ select option { background: var(--card2); }
 <div class="modal-overlay" id="pdfModalOverlay">
   <div class="modal" style="width:540px">
     <h2>📄 Экспорт в PDF</h2>
-    <p style="margin-bottom:14px">Выберите ориентацию страницы и содержимое. Откроется диалог печати браузера — там выберите <strong>«Сохранить как PDF»</strong> в качестве принтера.</p>
-
-    <div class="form-group" style="margin-bottom:18px">
-      <label>Ориентация</label>
-      <div style="display:flex;gap:8px;margin-top:6px">
-        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);cursor:pointer;font-size:13px">
-          <input type="radio" name="pdfOrient" value="portrait"> 📄 Книжная
-        </label>
-        <label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);cursor:pointer;font-size:13px">
-          <input type="radio" name="pdfOrient" value="landscape" checked> 🖥 Альбомная
-        </label>
-      </div>
-    </div>
+    <p style="margin-bottom:14px">Выберите содержимое для экспорта. Откроется диалог печати браузера в альбомной ориентации — выберите <strong>«Сохранить как PDF»</strong> в качестве принтера.</p>
 
     <div class="form-group">
       <label>Что включить в PDF</label>
@@ -1533,6 +1629,145 @@ function clearForm() {
 }
 
 function onDateChange() { checkDuplicate(); }
+
+// ============================================================
+// GROUP ENTRY (bulk add records that share date + enterprise + course + instructor)
+// ============================================================
+function switchInputMode(mode) {
+  document.getElementById('singleEntryForm').style.display = mode === 'single' ? 'block' : 'none';
+  document.getElementById('groupEntryForm').style.display  = mode === 'group'  ? 'block' : 'none';
+  if (mode === 'group') {
+    // Initialize: set today's date and ensure at least one row exists
+    if (!document.getElementById('g_date').value) {
+      document.getElementById('g_date').value = new Date().toISOString().slice(0,10);
+    }
+    if (!document.getElementById('groupRowsBody').children.length) addGroupRow();
+  }
+}
+
+function addGroupRow(values) {
+  // values: optional {tab, name, position, completion}
+  const tbody = document.getElementById('groupRowsBody');
+  const tr = document.createElement('tr');
+  const v = values || {};
+  tr.innerHTML = `
+    <td><input type="text" class="g-tab mono-input" inputmode="numeric" pattern="[0-9]*"
+               value="${(v.tab||'').replace(/"/g,'&quot;')}"
+               oninput="this.value=this.value.replace(/\\D/g,'')"
+               placeholder="20436482"></td>
+    <td><input type="text" class="g-name" value="${(v.name||'').replace(/"/g,'&quot;')}" placeholder="Иванов И. И."></td>
+    <td><input type="text" class="g-position" list="list_positions" value="${(v.position||'').replace(/"/g,'&quot;')}" placeholder="Должность"></td>
+    <td><input type="number" class="g-completion mono-input" min="0" max="100" value="${v.completion||''}" placeholder="85"></td>
+    <td><button class="row-del-btn" onclick="this.closest('tr').remove(); updateGroupCount()" title="Удалить">✕</button></td>
+  `;
+  tbody.appendChild(tr);
+  updateGroupCount();
+  // Live counter: update on any input change
+  tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateGroupCount));
+  // Attach paste handler to first input of new row (so Ctrl+V from Excel into any input fills the table)
+  tr.querySelector('.g-tab').addEventListener('paste', handleGroupPaste);
+}
+
+function clearGroupRows() {
+  document.getElementById('groupRowsBody').innerHTML = '';
+  addGroupRow(); // keep one empty row visible
+}
+
+function clearGroupForm() {
+  ['g_enterprise','g_course','g_instructor'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('g_date').value = new Date().toISOString().slice(0,10);
+  clearGroupRows();
+}
+
+function updateGroupCount() {
+  const rows = document.getElementById('groupRowsBody').querySelectorAll('tr');
+  // Count non-empty rows (at least tab or name filled)
+  let nonEmpty = 0;
+  rows.forEach(tr => {
+    const tab = tr.querySelector('.g-tab')?.value.trim();
+    const name = tr.querySelector('.g-name')?.value.trim();
+    if (tab || name) nonEmpty++;
+  });
+  document.getElementById('groupCount').textContent = `(${nonEmpty})`;
+  document.getElementById('groupSaveCount').textContent = nonEmpty > 0 ? `(${nonEmpty})` : '';
+}
+
+// Parse pasted Excel data: split into lines, then split each line by tab.
+// Expected column order: tab, name, position, completion
+function handleGroupPaste(e) {
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (!text || text.indexOf('\n') === -1 && text.indexOf('\t') === -1) {
+    // Single value, normal paste — let browser handle it
+    return;
+  }
+  e.preventDefault();
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (!lines.length) return;
+
+  // Replace all current rows with parsed data
+  document.getElementById('groupRowsBody').innerHTML = '';
+  lines.forEach(line => {
+    const cols = line.split('\t');
+    addGroupRow({
+      tab:        (cols[0] || '').replace(/\D/g, ''),
+      name:       (cols[1] || '').trim(),
+      position:   (cols[2] || '').trim(),
+      completion: (cols[3] || '').replace(/\D/g, '')
+    });
+  });
+  toast(`Добавлено из буфера: ${lines.length}`, 'success');
+}
+
+function saveGroup() {
+  const date       = document.getElementById('g_date').value;
+  const enterprise = document.getElementById('g_enterprise').value.trim();
+  const course     = document.getElementById('g_course').value.trim();
+  const instructor = document.getElementById('g_instructor').value.trim();
+
+  if (!date)       { toast('Укажите дату обучения', 'error'); return; }
+  if (!enterprise) { toast('Укажите предприятие', 'error'); return; }
+  if (!course)     { toast('Укажите курс обучения', 'error'); return; }
+
+  const month = MONTHS[new Date(date).getMonth()];
+  const rows = document.getElementById('groupRowsBody').querySelectorAll('tr');
+  const newRecords = [];
+  let skipped = 0;
+  rows.forEach(tr => {
+    const tab        = tr.querySelector('.g-tab').value.trim();
+    const name       = tr.querySelector('.g-name').value.trim();
+    const position   = tr.querySelector('.g-position').value.trim();
+    const completion = parseInt(tr.querySelector('.g-completion').value) || 0;
+    // Skip rows missing both tab and name (treat as empty)
+    if (!tab && !name) { skipped++; return; }
+    if (!tab || !name) {
+      // Partial row — needs both tab and name
+      skipped++; return;
+    }
+    newRecords.push({
+      id: generateId(),
+      date, month,
+      enterprise, department: '',
+      tabNumber: tab, fullName: name, position,
+      course, completion, hours: 8, instructor,
+      createdAt: new Date().toISOString()
+    });
+  });
+
+  if (!newRecords.length) {
+    toast('Нет участников для сохранения', 'error');
+    return;
+  }
+
+  db.records.push(...newRecords);
+  markDirty();
+  updateAutocompleteLists();
+  refreshAll();
+  clearGroupForm();
+  const msg = skipped > 0
+    ? `Добавлено: ${newRecords.length}, пропущено: ${skipped}`
+    : `Добавлено записей: ${newRecords.length}`;
+  toast(msg, 'success');
+}
 
 // ============================================================
 // REFRESH / RENDER
@@ -3048,7 +3283,7 @@ function closePDFModal() {
 // Read settings, hide unchecked sections, set @page orientation, call window.print(),
 // then restore everything once print dialog closes.
 function confirmPDFExport() {
-  const orient = document.querySelector('input[name="pdfOrient"]:checked').value;
+  const orient = 'landscape'; // hardcoded — no orientation choice in UI
   const checks = document.querySelectorAll('#pdfSectionsBox input[type="checkbox"]');
   const enabled = new Set();
   checks.forEach(c => { if (c.checked) enabled.add(c.getAttribute('data-pdf-section-key')); });
