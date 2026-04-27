@@ -555,12 +555,53 @@ select option { background: var(--card2); }
 
 /* Native browser print: clean layout, hide app chrome */
 @media print {
+  /* Force the print engine to render background colors (browsers strip them by
+     default to save ink). Without this, the bars in "По инструкторам" and
+     "Топ курсы" come out as empty wrappers — only labels and numbers visible. */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   /* Hide app chrome and other tabs */
   .header, .nav, .tab-pane:not(.active),
   .pdf-hide, .modal-overlay, #toast { display: none !important; }
   /* Strip page chrome — print engine adds its own margins via @page */
   body { background: #fff !important; }
   .content { padding: 0 !important; }
+
+  /* Compact dashboard layout: keep KPI block proportions roughly as on screen
+     instead of letting them stretch full-width on A4 */
+  .kpi-row-top {
+    grid-template-columns: 240px 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+  }
+  .kpi-card { padding: 10px 14px !important; }
+  .kpi-value { font-size: 24px !important; margin-bottom: 2px !important; }
+  .kpi-label { font-size: 10px !important; margin-bottom: 4px !important; }
+  .kpi-sub { font-size: 10px !important; }
+
+  /* Charts row: keep bar+donut side-by-side as on screen */
+  .charts-row {
+    grid-template-columns: 2fr 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+  }
+  .chart-card { padding: 12px !important; }
+  .chart-title { font-size: 11px !important; margin-bottom: 8px !important; }
+
+  /* Trainer page: compact charts row */
+  .trainer-charts-row {
+    grid-template-columns: 2fr 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+  }
+  .trainer-section { margin-top: 14px !important; }
+
+  /* Constrain Chart.js canvas height so they don't dominate the page */
+  canvas { max-height: 220px !important; }
+
   /* Avoid splitting cards and chart blocks across pages */
   .chart-card, .kpi-card, .table-wrap,
   .trainer-section, [data-pdf-section] { break-inside: avoid; page-break-inside: avoid; }
