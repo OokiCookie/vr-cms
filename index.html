@@ -591,6 +591,12 @@ select option { background: var(--card2); }
   .chart-card { padding: 12px !important; }
   .chart-title { font-size: 11px !important; margin-bottom: 8px !important; }
 
+  /* Trainers page: hide left list, give detail card the full page width */
+  .trainers-list { display: none !important; }
+  .trainers-layout { grid-template-columns: 1fr !important; gap: 0 !important; }
+  .trainer-detail { border: none !important; box-shadow: none !important; padding: 0 !important; }
+  .section-header { display: none !important; }
+
   /* Trainer page: compact charts row */
   .trainer-charts-row {
     grid-template-columns: 2fr 1fr !important;
