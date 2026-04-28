@@ -749,7 +749,7 @@ select option { background: var(--card2); }
       </div>
       <div class="chart-card" data-pdf-section="chartEnterprises" data-pdf-label="График по предприятиям">
         <div class="chart-title">По предприятиям</div>
-        <div id="chartEnterprises"></div>
+        <canvas id="chartEnterprises"></canvas>
       </div>
     </div>
     <div style="margin-bottom:24px" data-pdf-section="topCourses" data-pdf-label="Топ курсы">
@@ -1883,64 +1883,6 @@ function renderHTMLBarChart(containerId, labels, data, color) {
   }).join('');
 }
 
-// Pure SVG donut chart with side legend.
-// Originally introduced as an alternative to Chart.js donut because html2canvas
-// (used by html2pdf) had trouble copying canvas pixel buffers when multiple
-// canvases shared a CSS grid row. We've since switched to native browser print,
-// which renders Chart.js fine — but SVG works equally well and the simpler
-// implementation is worth keeping.
-function renderSVGDonut(containerId, labels, data) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  if (!labels || !labels.length) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px;text-align:center">Нет данных</div>';
-    return;
-  }
-  const colors = ['#1a6ef5','#06b6d4','#f5a623','#22c55e','#f43f5e','#a855f7','#f97316','#84cc16'];
-  const total = data.reduce((a,b) => a+b, 0) || 1;
-
-  // Donut geometry: SVG 200x200 viewBox, donut centered at (100,100), outer r=80, inner r=50
-  const cx = 100, cy = 100, rOuter = 80, rInner = 50;
-  let cumAngle = -Math.PI / 2; // start at top
-
-  const arcPath = (startA, endA) => {
-    const x1 = cx + rOuter * Math.cos(startA);
-    const y1 = cy + rOuter * Math.sin(startA);
-    const x2 = cx + rOuter * Math.cos(endA);
-    const y2 = cy + rOuter * Math.sin(endA);
-    const x3 = cx + rInner * Math.cos(endA);
-    const y3 = cy + rInner * Math.sin(endA);
-    const x4 = cx + rInner * Math.cos(startA);
-    const y4 = cy + rInner * Math.sin(startA);
-    const largeArc = (endA - startA) > Math.PI ? 1 : 0;
-    return `M ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${x2} ${y2} L ${x3} ${y3} A ${rInner} ${rInner} 0 ${largeArc} 0 ${x4} ${y4} Z`;
-  };
-
-  const slices = data.map((v, i) => {
-    const angle = (v / total) * 2 * Math.PI;
-    const startA = cumAngle;
-    const endA   = cumAngle + angle;
-    cumAngle = endA;
-    const color = colors[i % colors.length];
-    return `<path d="${arcPath(startA, endA)}" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
-  }).join('');
-
-  const legend = labels.map((label, i) => {
-    const color = colors[i % colors.length];
-    const pct = Math.round((data[i] / total) * 100);
-    return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--sans);color:var(--text2);line-height:1.4">
-      <span style="display:inline-block;width:10px;height:10px;background:${color};border-radius:2px;flex-shrink:0"></span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${label}">${label}</span>
-      <span style="font-family:var(--mono);font-size:10px;color:var(--text3);flex-shrink:0">${pct}%</span>
-    </div>`;
-  }).join('');
-
-  el.innerHTML = `<div style="display:flex;align-items:center;gap:14px">
-    <svg viewBox="0 0 200 200" style="width:200px;height:200px;flex-shrink:0">${slices}</svg>
-    <div style="flex:1;display:flex;flex-direction:column;gap:5px;min-width:0">${legend}</div>
-  </div>`;
-}
-
 function updateCharts() {
   const recs = activeRecords();
   // Monthly chart
@@ -1949,11 +1891,11 @@ function updateCharts() {
   recs.forEach(r => { if (r.month) monthCounts[r.month] = (monthCounts[r.month]||0)+1; });
   updateBarChart('chartMonths', MONTHS, MONTHS.map(m => monthCounts[m]), '#1a6ef5');
 
-  // Enterprise donut — SVG instead of Chart.js (works reliably with html2canvas)
+  // Enterprise donut
   const entCounts = {};
   recs.forEach(r => { entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
   const entSorted = Object.entries(entCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  renderSVGDonut('chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]));
+  updateDonut('chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]));
 
   // Top courses – wrap long labels into multiple lines for Chart.js
   const coCounts = {};
@@ -1988,16 +1930,31 @@ function updateBarChart(id, labels, data, color) {
   });
 }
 
-function updateDonut(id, labels, data) {
-  if (charts[id]) charts[id].destroy();
+// Renders a Chart.js doughnut. Tooltip shows "Label: count (percent%)".
+// `chartsObj` is the dict where the Chart instance is stored (charts or trainerCharts).
+function updateDonut(id, labels, data, chartsObj) {
+  const dict = chartsObj || charts;
+  if (dict[id]) dict[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
   if (!ctx) return;
   const colors = ['#1a6ef5','#06b6d4','#f5a623','#22c55e','#f43f5e','#a855f7','#f97316','#84cc16'];
-  charts[id] = new Chart(ctx, {
+  const total = data.reduce((a,b) => a + b, 0) || 1;
+  dict[id] = new Chart(ctx, {
     type: 'doughnut',
     data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#f2ede3', borderWidth: 2 }] },
     options: {
-      plugins: { legend: { position: 'right', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 11 }, padding: 8, boxWidth: 12 } } },
+      plugins: {
+        legend: { position: 'right', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 11 }, padding: 8, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed;
+              const pct = Math.round((v / total) * 100);
+              return ` ${ctx.label}: ${v} (${pct}%)`;
+            }
+          }
+        }
+      },
       responsive: true, maintainAspectRatio: true
     }
   });
@@ -3137,7 +3094,7 @@ function renderTrainerDetail() {
       </div>
       <div>
         <div class="trainer-section-title">По предприятиям</div>
-        <div id="t_chartEnterprises"></div>
+        <canvas id="t_chartEnterprises"></canvas>
       </div>
     </div>
 
@@ -3201,11 +3158,11 @@ function refreshTrainerData() {
     });
   }
 
-  // Enterprises donut — SVG (works reliably with html2canvas)
+  // Enterprises donut (registered in trainerCharts so it's destroyed/redrawn properly on filter change)
   const entCounts = {};
   recs.forEach(r => { if (r.enterprise) entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
   const entSorted = Object.entries(entCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  renderSVGDonut('t_chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]));
+  updateDonut('t_chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]), trainerCharts);
 
   // Top courses (HTML/CSS bars)
   const coCounts = {};
