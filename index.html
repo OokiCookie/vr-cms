@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
 :root {
   --bg: #f2ede3;
@@ -475,6 +476,33 @@ select option { background: var(--card2); }
 .dup-badge {
   background: #3a2a10; color: #fbbf24;
   font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700;
+}
+/* QR button in courses ref table */
+.ref-qr-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.ref-qr-btn:hover {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+.ref-qr-btn.ref-qr-active {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+.ref-qr-btn.ref-qr-active:hover {
+  background: #155bd4;
 }
 /* CHIP MULTISELECT — used in journal and trainer enterprise filters */
 .chip-multi {
@@ -1287,6 +1315,41 @@ select option { background: var(--card2); }
   </div>
 </div>
 
+<!-- QR CODE MODAL — single window for adding/viewing/editing course QR -->
+<div class="modal-overlay" id="qrModalOverlay">
+  <div class="modal" style="width:480px">
+    <h2 id="qrModalTitle" style="margin-bottom:6px">Анкета обратной связи</h2>
+    <div id="qrModalCourseName" style="color:var(--text2);font-size:13px;margin-bottom:18px"></div>
+
+    <!-- View mode: shown when a QR exists -->
+    <div id="qrModalView" style="display:none">
+      <div id="qrCanvasWrap" style="display:flex;justify-content:center;padding:16px;background:#fff;border-radius:var(--radius2);border:1px solid var(--border)">
+        <!-- QR generated here -->
+      </div>
+      <div style="margin-top:12px;padding:8px 10px;background:var(--card2);border-radius:var(--radius2);font-size:11px;font-family:var(--mono);color:var(--text2);word-break:break-all" id="qrModalUrlDisplay"></div>
+      <div class="modal-actions" style="margin-top:18px;flex-wrap:wrap;gap:8px">
+        <button class="btn btn-secondary" onclick="closeQRModal()">Закрыть</button>
+        <button class="btn btn-secondary" onclick="printQR()">🖨 Печать</button>
+        <button class="btn btn-secondary" onclick="qrModalEnterEdit()">✏ Редактировать</button>
+        <button class="btn btn-danger" onclick="qrModalDelete()">🗑 Удалить</button>
+      </div>
+    </div>
+
+    <!-- Edit mode: shown when adding new or editing existing -->
+    <div id="qrModalEdit" style="display:none">
+      <div class="form-group">
+        <label>Ссылка на анкету</label>
+        <input type="url" id="qrModalInput" placeholder="https://forms.google.com/..." style="width:100%">
+        <div style="font-size:11px;color:var(--text3);margin-top:6px">QR-код будет сгенерирован автоматически из этой ссылки.</div>
+      </div>
+      <div class="modal-actions" style="margin-top:18px">
+        <button class="btn btn-secondary" onclick="qrModalCancelEdit()">Отмена</button>
+        <button class="btn btn-primary" onclick="qrModalSave()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -1456,6 +1519,9 @@ function mergeDB(cloud, base, ours) {
     customCourses:     unionArr(cloud.customCourses,     ours.customCourses),
     customEnterprises: unionArr(cloud.customEnterprises, ours.customEnterprises),
     instructors:       unionArr(cloud.instructors,       ours.instructors),
+    // Merge QR map: ours wins on per-key conflict (we know what we just changed locally),
+    // but cloud entries we never touched are preserved.
+    courseQRs:         { ...(cloud.courseQRs||{}), ...(ours.courseQRs||{}) },
     lastModified: new Date().toISOString()
   };
 }
@@ -2882,7 +2948,7 @@ document.getElementById('modalOverlay').addEventListener('click', function(e) {
 // СПРАВОЧНИКИ (Reference manager)
 // ============================================================
 function renderRefs() {
-  renderRefTable('refCoursesBody', getAllCourses(), 'course', renameCourse, deleteRefCourse);
+  renderRefTable('refCoursesBody', getAllCourses(), 'course', renameCourse, deleteRefCourse, /*withQR=*/true);
   renderRefTable('refEntBody',     getAllEnterprises(), 'enterprise', renameEnterprise, deleteRefEnterprise);
 }
 
@@ -2902,7 +2968,7 @@ function getAllEnterprises() {
   return Object.entries(counts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
 }
 
-function renderRefTable(tbodyId, entries, field, renameFn, deleteFn) {
+function renderRefTable(tbodyId, entries, field, renameFn, deleteFn, withQR) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
   if (!entries.length) {
@@ -2913,8 +2979,20 @@ function renderRefTable(tbodyId, entries, field, renameFn, deleteFn) {
   tbody.innerHTML = entries.map(([name, cnt]) => {
     const id = safeId(name) + '_' + tbodyId;
     const esc = name.replace(/'/g, "\'").replace(/"/g, '&quot;');
+    // QR icon: only for courses. Color depends on whether a URL is already saved.
+    let qrCell = '';
+    if (withQR) {
+      const hasQR = !!(db.courseQRs && db.courseQRs[name]);
+      const title = hasQR ? 'Открыть QR-код анкеты' : 'Добавить QR-код анкеты';
+      const cls = hasQR ? 'ref-qr-btn ref-qr-active' : 'ref-qr-btn';
+      qrCell = `<button class="${cls}" onclick="openQRModal('${esc}')" title="${title}">▦</button>`;
+    }
     return `<tr>
-      <td style="font-size:13px">${name}</td>
+      <td style="font-size:13px">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${qrCell}<span>${name}</span>
+        </div>
+      </td>
       <td class="ref-count ${cnt > 0 ? 'has-records' : 'no-records'}">${cnt > 0 ? cnt : '—'}</td>
       <td>
         <div style="display:flex;gap:6px">
@@ -2933,6 +3011,11 @@ function renameCourse(oldName, newName) {
   let count = 0;
   db.records.forEach(r => { if (r.course === oldName) { r.course = newName; count++; } });
   if (db.customCourses) db.customCourses = db.customCourses.map(c => c === oldName ? newName : c);
+  // Migrate QR mapping along with the rename
+  if (db.courseQRs && db.courseQRs[oldName]) {
+    db.courseQRs[newName] = db.courseQRs[oldName];
+    delete db.courseQRs[oldName];
+  }
   markDirty(); refreshAll(); renderRefs();
   toast(`Переименовано: «${oldName}» → «${newName}» (затронуто записей: ${count})`, 'success');
 }
@@ -2949,6 +3032,8 @@ function deleteRefCourse(name, cnt) {
 
 function _removeCustomCourse(name) {
   if (db.customCourses) db.customCourses = db.customCourses.filter(c => c !== name);
+  // Drop QR mapping for the deleted course
+  if (db.courseQRs) delete db.courseQRs[name];
   markDirty(); refreshAll(); renderRefs();
   toast(`Курс «${name}» удалён из справочника`, 'success');
 }
@@ -2998,6 +3083,144 @@ function addRefEnterprise() {
   markDirty(); refreshAll(); renderRefs();
   toast(`Предприятие «${val}» добавлено`, 'success');
 }
+
+// ============================================================
+// QR CODES — feedback survey link per course, generated on the fly
+//
+// Storage: db.courseQRs = { "Курс А": "https://...", ... }
+// Single modal handles three states: add (no URL yet), view (URL exists),
+// edit (replacing existing URL). State swap is via two inner divs: #qrModalView
+// and #qrModalEdit — only one visible at a time.
+// ============================================================
+
+let qrModalCurrentCourse = null; // course name being edited/viewed
+
+function openQRModal(courseName) {
+  qrModalCurrentCourse = courseName;
+  document.getElementById('qrModalCourseName').textContent = courseName;
+  const url = (db.courseQRs || {})[courseName] || '';
+  if (url) {
+    qrModalShowView(url);
+  } else {
+    qrModalShowEdit('');
+  }
+  document.getElementById('qrModalOverlay').classList.add('open');
+}
+
+function closeQRModal() {
+  document.getElementById('qrModalOverlay').classList.remove('open');
+  qrModalCurrentCourse = null;
+}
+
+// Render the view state: QR image + URL + action buttons
+function qrModalShowView(url) {
+  document.getElementById('qrModalView').style.display = 'block';
+  document.getElementById('qrModalEdit').style.display = 'none';
+  document.getElementById('qrModalUrlDisplay').textContent = url;
+  // Generate QR. Type 0 = auto-pick the smallest size that fits the data.
+  // Error-correction level 'M' is a good balance for printed surveys.
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  // 6 = pixel size per module, 4 = quiet zone in modules. Yields ~290px image.
+  const wrap = document.getElementById('qrCanvasWrap');
+  wrap.innerHTML = qr.createImgTag(6, 4);
+  // Style the rendered <img> for centering
+  const img = wrap.querySelector('img');
+  if (img) { img.style.display = 'block'; img.alt = 'QR-код анкеты'; }
+}
+
+// Render the edit/add state with a pre-filled URL field
+function qrModalShowEdit(currentUrl) {
+  document.getElementById('qrModalView').style.display = 'none';
+  document.getElementById('qrModalEdit').style.display = 'block';
+  const inp = document.getElementById('qrModalInput');
+  inp.value = currentUrl;
+  setTimeout(() => inp.focus(), 50);
+}
+
+function qrModalEnterEdit() {
+  const url = (db.courseQRs || {})[qrModalCurrentCourse] || '';
+  qrModalShowEdit(url);
+}
+
+function qrModalCancelEdit() {
+  // If the course already had a URL, fall back to view; otherwise close the modal entirely
+  const url = (db.courseQRs || {})[qrModalCurrentCourse] || '';
+  if (url) qrModalShowView(url); else closeQRModal();
+}
+
+function qrModalSave() {
+  const url = document.getElementById('qrModalInput').value.trim();
+  if (!url) { toast('Введите ссылку', 'error'); return; }
+  // Light validation — must look like a URL with a scheme
+  if (!/^https?:\/\//i.test(url)) {
+    toast('Ссылка должна начинаться с http:// или https://', 'error');
+    return;
+  }
+  if (!db.courseQRs) db.courseQRs = {};
+  db.courseQRs[qrModalCurrentCourse] = url;
+  markDirty();
+  renderRefs(); // refresh the icon color in the table
+  qrModalShowView(url);
+  toast('QR-код сохранён', 'success');
+}
+
+function qrModalDelete() {
+  if (!confirm('Удалить QR-код для этого курса?')) return;
+  if (db.courseQRs) delete db.courseQRs[qrModalCurrentCourse];
+  markDirty();
+  renderRefs();
+  closeQRModal();
+  toast('QR-код удалён', 'success');
+}
+
+// Print just the QR using window.print().
+// We add a print-only style that hides everything except the QR wrap, then revert.
+function printQR() {
+  const wrap = document.getElementById('qrCanvasWrap');
+  if (!wrap || !wrap.querySelector('img')) { toast('Нет QR для печати', 'error'); return; }
+  const courseName = qrModalCurrentCourse || '';
+  // Inject a print-specific stylesheet that shows only our QR area
+  const style = document.createElement('style');
+  style.id = 'qrPrintStyle';
+  style.textContent = `
+    @media print {
+      body * { visibility: hidden !important; }
+      #qrPrintArea, #qrPrintArea * { visibility: visible !important; }
+      #qrPrintArea {
+        position: absolute; left: 0; top: 0; width: 100%;
+        text-align: center; padding-top: 20mm;
+      }
+      #qrPrintArea img { width: 90mm; height: 90mm; }
+      #qrPrintArea h2 { font-size: 16pt; margin-bottom: 8mm; font-family: sans-serif; }
+      @page { size: A4 portrait; margin: 15mm; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Build a temporary printable area
+  const printArea = document.createElement('div');
+  printArea.id = 'qrPrintArea';
+  printArea.innerHTML = `<h2>${courseName}</h2>${wrap.innerHTML}`;
+  document.body.appendChild(printArea);
+
+  // Cleanup after print dialog closes (whether saved or cancelled)
+  const cleanup = () => {
+    style.remove();
+    printArea.remove();
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+
+  setTimeout(() => window.print(), 50);
+}
+
+// Click outside the modal closes it
+document.addEventListener('DOMContentLoaded', () => {
+  const ov = document.getElementById('qrModalOverlay');
+  if (ov) ov.addEventListener('click', e => { if (e.target === ov) closeQRModal(); });
+});
 
 // ============================================================
 // КОРЗИНА (Trash)
