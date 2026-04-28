@@ -476,6 +476,51 @@ select option { background: var(--card2); }
   background: #3a2a10; color: #fbbf24;
   font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700;
 }
+/* CHIP MULTISELECT — used in journal and trainer enterprise filters */
+.chip-multi {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  padding: 4px 6px;
+  min-width: 220px;
+  min-height: 36px;
+  position: relative;
+}
+.chip-multi-input {
+  flex: 1;
+  min-width: 100px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--sans);
+  padding: 4px 6px;
+}
+.chip-multi-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 12px;
+  padding: 3px 6px 3px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip-multi-chip button {
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,0.8); font-size: 12px;
+  line-height: 1; padding: 0 2px;
+}
+.chip-multi-chip button:hover { color: #fff; }
+.chip-multi-placeholder {
+  color: var(--text3); font-size: 12px;
+  pointer-events: none;
+  padding: 4px 6px;
+}
 /* INPUT MODE TOGGLE (single record / group) */
 .mode-toggle {
   display: inline-flex;
@@ -950,9 +995,10 @@ select option { background: var(--card2); }
       <select class="filter-select" id="filterMonth" onchange="filterRecords()">
         <option value="">Все месяцы</option>
       </select>
-      <select class="filter-select" id="filterEnterprise" onchange="filterRecords()">
-        <option value="">Все предприятия</option>
-      </select>
+      <div class="chip-multi" id="filterEnterprise">
+        <input type="text" class="chip-multi-input" placeholder="Все предприятия" list="list_enterprises_filter" autocomplete="off">
+        <datalist id="list_enterprises_filter"></datalist>
+      </div>
       <select class="filter-select" id="filterCourse" onchange="filterRecords()">
         <option value="">Все курсы</option>
       </select>
@@ -1888,11 +1934,8 @@ function renderHTMLBarChart(containerId, labels, data, color) {
 
 function updateCharts() {
   const recs = activeRecords();
-  // Monthly chart
-  const monthCounts = {};
-  MONTHS.forEach(m => monthCounts[m] = 0);
-  recs.forEach(r => { if (r.month) monthCounts[r.month] = (monthCounts[r.month]||0)+1; });
-  updateBarChart('chartMonths', MONTHS, MONTHS.map(m => monthCounts[m]), '#1a6ef5');
+  // Monthly chart — stacked by enterprise (top-8 + "Прочие")
+  updateStackedBarChart('chartMonths', recs);
 
   // Enterprise donut
   const entCounts = {};
@@ -1915,18 +1958,71 @@ function updateCharts() {
 
 }
 
-function updateBarChart(id, labels, data, color) {
-  if (charts[id]) charts[id].destroy();
+// Stacked bar chart: each month split by enterprise. Top-8 enterprises shown
+// individually (matching donut colors), the rest aggregated as "Прочие".
+// `chartsObj` lets us reuse for both dashboard (charts) and trainer page (trainerCharts).
+function updateStackedBarChart(id, recs, chartsObj) {
+  const dict = chartsObj || charts;
+  if (dict[id]) dict[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
   if (!ctx) return;
-  charts[id] = new Chart(ctx, {
+
+  // Same colors as donut so the two charts are visually consistent
+  const colors = ['#1a6ef5','#06b6d4','#f5a623','#22c55e','#f43f5e','#a855f7','#f97316','#84cc16'];
+  const otherColor = '#a8a29e';
+
+  // Find top-8 enterprises by total record count
+  const totals = {};
+  recs.forEach(r => { if (r.enterprise) totals[r.enterprise] = (totals[r.enterprise]||0) + 1; });
+  const topEnterprises = Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0,8).map(e => e[0]);
+  const topSet = new Set(topEnterprises);
+
+  // Build month × enterprise matrix
+  const matrix = {};
+  MONTHS.forEach(m => {
+    matrix[m] = {};
+    topEnterprises.forEach(e => matrix[m][e] = 0);
+    matrix[m]['__other'] = 0;
+  });
+  recs.forEach(r => {
+    if (!r.month || !r.enterprise) return;
+    const bucket = topSet.has(r.enterprise) ? r.enterprise : '__other';
+    if (matrix[r.month]) matrix[r.month][bucket]++;
+  });
+
+  // Build datasets — one per enterprise. Skip "Прочие" if always zero.
+  const otherTotal = MONTHS.reduce((sum, m) => sum + matrix[m]['__other'], 0);
+  const datasets = topEnterprises.map((ent, i) => ({
+    label: ent,
+    data: MONTHS.map(m => matrix[m][ent]),
+    backgroundColor: colors[i % colors.length],
+    borderWidth: 0,
+  }));
+  if (otherTotal > 0) {
+    datasets.push({
+      label: 'Прочие',
+      data: MONTHS.map(m => matrix[m]['__other']),
+      backgroundColor: otherColor,
+      borderWidth: 0,
+    });
+  }
+
+  dict[id] = new Chart(ctx, {
     type: 'bar',
-    data: { labels, datasets: [{ data, backgroundColor: color + 'cc', borderColor: color, borderWidth: 1, borderRadius: 4 }] },
+    data: { labels: MONTHS, datasets },
     options: {
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
+        tooltip: {
+          callbacks: {
+            // Show count next to enterprise name in tooltip
+            label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}`
+          }
+        }
+      },
       scales: {
-        x: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } },
-        y: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } }
+        x: { stacked: true, grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } },
+        y: { stacked: true, grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } }
       },
       responsive: true, maintainAspectRatio: true
     }
@@ -2078,7 +2174,7 @@ function sortJournal(field) {
 function filterRecords() {
   const search = document.getElementById('searchInput').value.toLowerCase();
   const month = document.getElementById('filterMonth').value;
-  const enterprise = document.getElementById('filterEnterprise').value;
+  const enterprises = getChipMultiValues('filterEnterprise'); // multi-select
   const course = document.getElementById('filterCourse').value;
   const instructor = document.getElementById('filterInstructor')?.value || '';
 
@@ -2093,7 +2189,7 @@ function filterRecords() {
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
     if (dateTo && (!r.date || r.date > dateTo)) return false;
     if (month && r.month !== month) return false;
-    if (enterprise && r.enterprise !== enterprise) return false;
+    if (enterprises.length && !enterprises.includes(r.enterprise)) return false;
     if (course && r.course !== course) return false;
     if (instructor && (r.instructor||'') !== instructor) return false;
     if (search && ![r.fullName, r.tabNumber, r.course, r.enterprise, r.position, r.instructor].join(' ').toLowerCase().includes(search)) return false;
@@ -2178,7 +2274,7 @@ function updateBulkActions() {
 function resetFilters() {
   document.getElementById('searchInput').value = '';
   document.getElementById('filterMonth').value = '';
-  document.getElementById('filterEnterprise').value = '';
+  clearChipMulti('filterEnterprise', filterRecords);
   document.getElementById('filterCourse').value = '';
   document.getElementById('filterDate').value = '';
   document.getElementById('filterDateFrom').value = '';
@@ -2215,9 +2311,13 @@ function updateFilterOptions() {
   const instructors = [...new Set(recs.map(r=>r.instructor||'').filter(Boolean))].sort();
 
   fillSelect('filterMonth', months);
-  fillSelect('filterEnterprise', enterprises);
   fillSelect('filterCourse', courses);
   fillSelect('filterInstructor', instructors);
+  // Journal enterprise filter is a chip-multi — fill its datalist for autocomplete
+  const dl = document.getElementById('list_enterprises_filter');
+  if (dl) {
+    dl.innerHTML = enterprises.map(e => `<option value="${e.replace(/"/g,'&quot;')}">`).join('');
+  }
 }
 
 function fillSelect(id, items, sortFn) {
@@ -2226,6 +2326,138 @@ function fillSelect(id, items, sortFn) {
   const first = sel.options[0].outerHTML;
   sel.innerHTML = first + items.map(i => `<option value="${i}">${i}</option>`).join('');
   sel.value = val;
+}
+
+// Chip-multi state: container element → array of selected values
+const chipMultiState = new WeakMap();
+
+// Wire up a chip-multi container. Call once per container per page render.
+// onChange fires whenever a chip is added or removed.
+function setupChipMulti(containerId, onChange) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  // If already wired, just refresh the visual state (preserves existing selection)
+  if (chipMultiState.has(container)) { renderChipMulti(container, onChange); return; }
+
+  chipMultiState.set(container, []);
+  const input = container.querySelector('.chip-multi-input');
+  if (!input) return;
+
+  // Add chip on Enter or when an item is picked from the datalist (input event with full match)
+  input.addEventListener('input', () => {
+    const val = input.value.trim();
+    // datalist autocomplete fires a normal input event; we add the chip when value
+    // exactly matches a datalist option (means user picked one)
+    const list = input.list;
+    if (list && val) {
+      const match = [...list.options].find(o => o.value === val);
+      if (match) {
+        addChip(container, val, onChange);
+        input.value = '';
+      }
+    }
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && input.value.trim()) {
+      e.preventDefault();
+      addChip(container, input.value.trim(), onChange);
+      input.value = '';
+    } else if (e.key === 'Backspace' && !input.value) {
+      // Remove last chip on backspace in empty input
+      const arr = chipMultiState.get(container);
+      if (arr.length) { arr.pop(); renderChipMulti(container, onChange); onChange(); }
+    }
+  });
+
+  renderChipMulti(container, onChange);
+}
+
+function addChip(container, value, onChange) {
+  const arr = chipMultiState.get(container);
+  if (!arr || arr.includes(value)) return;
+  arr.push(value);
+  renderChipMulti(container, onChange);
+  onChange();
+}
+
+function removeChip(container, value, onChange) {
+  const arr = chipMultiState.get(container);
+  if (!arr) return;
+  const i = arr.indexOf(value);
+  if (i >= 0) arr.splice(i, 1);
+  renderChipMulti(container, onChange);
+  onChange();
+}
+
+function renderChipMulti(container, onChange) {
+  const arr = chipMultiState.get(container) || [];
+  const input = container.querySelector('.chip-multi-input');
+  const inputVal = input ? input.value : '';
+  // Rebuild: chips first, then input. Datalist (if any) stays in place.
+  const datalist = container.querySelector('datalist');
+  container.innerHTML = '';
+  arr.forEach(v => {
+    const chip = document.createElement('span');
+    chip.className = 'chip-multi-chip';
+    chip.title = v;
+    chip.innerHTML = `${escapeHTML(v)} <button type="button" aria-label="Удалить">✕</button>`;
+    chip.querySelector('button').addEventListener('click', () => removeChip(container, v, onChange));
+    container.appendChild(chip);
+  });
+  const newInput = document.createElement('input');
+  newInput.type = 'text';
+  newInput.className = 'chip-multi-input';
+  newInput.placeholder = arr.length ? '' : 'Все предприятия';
+  newInput.value = inputVal;
+  newInput.autocomplete = 'off';
+  if (datalist) {
+    newInput.setAttribute('list', datalist.id);
+    container.appendChild(datalist);
+  }
+  container.appendChild(newInput);
+  // Re-attach listeners to the new input
+  newInput.addEventListener('input', () => {
+    const val = newInput.value.trim();
+    const list = newInput.list;
+    if (list && val) {
+      const match = [...list.options].find(o => o.value === val);
+      if (match) {
+        addChip(container, val, onChange);
+        newInput.value = '';
+      }
+    }
+  });
+  newInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && newInput.value.trim()) {
+      e.preventDefault();
+      addChip(container, newInput.value.trim(), onChange);
+      newInput.value = '';
+    } else if (e.key === 'Backspace' && !newInput.value) {
+      const a = chipMultiState.get(container);
+      if (a.length) { a.pop(); renderChipMulti(container, onChange); onChange(); }
+    }
+  });
+}
+
+// Get currently selected chips as array
+function getChipMultiValues(containerId) {
+  const c = document.getElementById(containerId);
+  if (!c) return [];
+  return chipMultiState.get(c) || [];
+}
+
+// Clear all chips
+function clearChipMulti(containerId, onChange) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  const arr = chipMultiState.get(c);
+  if (arr) arr.length = 0;
+  renderChipMulti(c, onChange || (()=>{}));
+}
+
+// Tiny HTML escape for chip text
+function escapeHTML(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function saveInstructor() {
@@ -3080,12 +3312,14 @@ function renderTrainerDetail() {
         <label>По дату</label>
         <input type="date" id="t_dateTo" onchange="refreshTrainerData()">
       </div>
-      <div class="form-group" style="flex:1;min-width:160px">
-        <label>Предприятие</label>
-        <select id="t_enterprise" onchange="refreshTrainerData()" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:9px 12px;font-size:13px;font-family:var(--sans);outline:none">
-          <option value="">Все предприятия</option>
-          ${enterprises.map(e => `<option value="${e.replace(/"/g,'&quot;')}">${e}</option>`).join('')}
-        </select>
+      <div class="form-group" style="flex:1;min-width:200px">
+        <label>Предприятия</label>
+        <div class="chip-multi" id="t_enterprise">
+          <input type="text" class="chip-multi-input" placeholder="Все предприятия" list="t_enterpriseList" autocomplete="off">
+          <datalist id="t_enterpriseList">
+            ${enterprises.map(e => `<option value="${e.replace(/"/g,'&quot;')}">`).join('')}
+          </datalist>
+        </div>
       </div>
       <button class="btn btn-secondary btn-sm" style="align-self:flex-end" onclick="resetTrainerFilters()">✕ Сброс</button>
     </div>
@@ -3119,6 +3353,9 @@ function renderTrainerDetail() {
     </div>
   `;
 
+  // Wire up the chip-multi enterprise filter (the container is freshly rendered)
+  setupChipMulti('t_enterprise', refreshTrainerData);
+
   refreshTrainerData();
 }
 
@@ -3128,38 +3365,21 @@ function refreshTrainerData() {
 
   const dateFrom  = document.getElementById('t_dateFrom')?.value || '';
   const dateTo    = document.getElementById('t_dateTo')?.value || '';
-  const entFilter = document.getElementById('t_enterprise')?.value || '';
+  const entFilters = getChipMultiValues('t_enterprise'); // multi-select
 
   const recs = activeRecords().filter(r => {
     if ((r.instructor||'').trim() !== selectedTrainer) return false;
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
     if (dateTo && (!r.date || r.date > dateTo)) return false;
-    if (entFilter && r.enterprise !== entFilter) return false;
+    if (entFilters.length && !entFilters.includes(r.enterprise)) return false;
     return true;
   });
 
   document.getElementById('t_totalCount').textContent = recs.length;
 
-  // Months chart
-  const monthCounts = {};
-  MONTHS.forEach(m => monthCounts[m] = 0);
-  recs.forEach(r => { if (r.month) monthCounts[r.month] = (monthCounts[r.month]||0)+1; });
-  if (trainerCharts.months) trainerCharts.months.destroy();
-  const monthsCtx = document.getElementById('t_chartMonths')?.getContext('2d');
-  if (monthsCtx) {
-    trainerCharts.months = new Chart(monthsCtx, {
-      type: 'bar',
-      data: { labels: MONTHS, datasets: [{ data: MONTHS.map(m=>monthCounts[m]), backgroundColor: '#1a6ef5cc', borderColor: '#1a6ef5', borderWidth: 1, borderRadius: 4 }] },
-      options: {
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { size: 10 } } },
-          y: { grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } }
-        },
-        responsive: true, maintainAspectRatio: true
-      }
-    });
-  }
+  // Months chart — stacked by enterprise (top-8 + "Прочие"), same logic as dashboard.
+  // For a single trainer, this shows which enterprises they trained at, broken down by month.
+  updateStackedBarChart('t_chartMonths', recs, trainerCharts);
 
   // Enterprises donut (registered in trainerCharts so it's destroyed/redrawn properly on filter change)
   const entCounts = {};
@@ -3191,9 +3411,9 @@ function refreshTrainerData() {
 }
 
 function resetTrainerFilters() {
-  if (document.getElementById('t_dateFrom'))   document.getElementById('t_dateFrom').value = '';
-  if (document.getElementById('t_dateTo'))     document.getElementById('t_dateTo').value = '';
-  if (document.getElementById('t_enterprise')) document.getElementById('t_enterprise').value = '';
+  if (document.getElementById('t_dateFrom')) document.getElementById('t_dateFrom').value = '';
+  if (document.getElementById('t_dateTo'))   document.getElementById('t_dateTo').value = '';
+  clearChipMulti('t_enterprise', refreshTrainerData);
   refreshTrainerData();
 }
 
@@ -3299,6 +3519,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateAutocompleteLists();
   // Set default date to today
   document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  // Wire up the journal enterprise chip-multi filter
+  setupChipMulti('filterEnterprise', filterRecords);
   refreshAll();
 
   // Warn before leaving with unsaved changes — and try to flush pending autosave
