@@ -2007,10 +2007,39 @@ function updateStackedBarChart(id, recs, chartsObj) {
     });
   }
 
+  // Inline plugin: draw the total of each stacked bar above the bar.
+  // Stacked bars hide individual segment values; without this, you can't see
+  // "how many people were trained in March" without doing tooltip math.
+  const totalsPlugin = {
+    id: 'stackedBarTotals',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea || !scales.x || !scales.y) return;
+      const totals = MONTHS.map((_, monthIdx) =>
+        chart.data.datasets.reduce((sum, ds) => sum + (ds.data[monthIdx] || 0), 0)
+      );
+      ctx.save();
+      ctx.fillStyle = '#5a5040';
+      ctx.font = 'bold 11px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      totals.forEach((total, i) => {
+        if (total === 0) return;
+        const x = scales.x.getPixelForValue(i);
+        const y = scales.y.getPixelForValue(total);
+        ctx.fillText(String(total), x, y - 4);
+      });
+      ctx.restore();
+    }
+  };
+
   dict[id] = new Chart(ctx, {
     type: 'bar',
     data: { labels: MONTHS, datasets },
+    plugins: [totalsPlugin],
     options: {
+      // Add a bit of headroom on the y-axis so total labels don't get clipped at the top
+      layout: { padding: { top: 16 } },
       plugins: {
         legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
         tooltip: {
