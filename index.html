@@ -625,9 +625,10 @@ select option { background: var(--card2); }
   .kpi-label { font-size: 10px !important; margin-bottom: 4px !important; }
   .kpi-sub { font-size: 10px !important; }
 
-  /* Charts row: keep bar+donut side-by-side as on screen */
+  /* Charts row: keep bar+donut side-by-side as on screen, but give donut a bit more
+     room (3:2 instead of 2:1) so its responsive canvas doesn't overflow the cell. */
   .charts-row {
-    grid-template-columns: 2fr 1fr !important;
+    grid-template-columns: 3fr 2fr !important;
     gap: 10px !important;
     margin-bottom: 14px !important;
   }
@@ -640,16 +641,18 @@ select option { background: var(--card2); }
   .trainer-detail { border: none !important; box-shadow: none !important; padding: 0 !important; }
   .section-header { display: none !important; }
 
-  /* Trainer page: compact charts row */
+  /* Trainer page: compact charts row (same proportions as dashboard) */
   .trainer-charts-row {
-    grid-template-columns: 2fr 1fr !important;
+    grid-template-columns: 3fr 2fr !important;
     gap: 10px !important;
     margin-bottom: 12px !important;
   }
   .trainer-section { margin-top: 14px !important; }
 
-  /* Constrain Chart.js canvas height so they don't dominate the page */
-  canvas { max-height: 220px !important; }
+  /* Constrain Chart.js canvas size so it doesn't overflow grid cells in print.
+     Chart.js with maintainAspectRatio: true tries to grow canvas to maintain
+     aspect ratio; without max-width it can spill past the cell boundary. */
+  canvas { max-height: 220px !important; max-width: 100% !important; }
 
   /* Avoid splitting cards and chart blocks across pages */
   .chart-card, .kpi-card, .table-wrap,
