@@ -825,7 +825,7 @@ select option { background: var(--card2); }
       </div>
       <div class="chart-card" data-pdf-section="chartEnterprises" data-pdf-label="График по предприятиям">
         <div class="chart-title">По предприятиям</div>
-        <canvas id="chartEnterprises"></canvas>
+        <div style="position:relative;height:240px"><canvas id="chartEnterprises"></canvas></div>
       </div>
     </div>
     <div style="margin-bottom:24px" data-pdf-section="topCourses" data-pdf-label="Топ курсы">
@@ -2138,7 +2138,33 @@ function updateDonut(id, labels, data, chartsObj) {
     data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#f2ede3', borderWidth: 2 }] },
     options: {
       plugins: {
-        legend: { position: 'right', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 11 }, padding: 8, boxWidth: 12 } },
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#5a5040',
+            font: { family: 'Exo 2', size: 11 },
+            padding: 8,
+            boxWidth: 12,
+            // Custom labels: "Name — count (percent%)" so the static legend is informative
+            // without requiring tooltip hover. Especially important for printed reports.
+            generateLabels: (chart) => {
+              const ds = chart.data.datasets[0];
+              if (!ds) return [];
+              return chart.data.labels.map((label, i) => {
+                const v = ds.data[i];
+                const pct = Math.round((v / total) * 100);
+                return {
+                  text: `${label} — ${v} (${pct}%)`,
+                  fillStyle: ds.backgroundColor[i],
+                  strokeStyle: ds.backgroundColor[i],
+                  lineWidth: 0,
+                  hidden: !chart.getDataVisibility(i),
+                  index: i
+                };
+              });
+            }
+          }
+        },
         tooltip: {
           callbacks: {
             label: (ctx) => {
@@ -2149,7 +2175,11 @@ function updateDonut(id, labels, data, chartsObj) {
           }
         }
       },
-      responsive: true, maintainAspectRatio: true
+      // Don't force a square aspect ratio — let the chart fill the card and Chart.js
+      // will give the donut the leftover space after the legend is laid out.
+      // Combined with a fixed-height container this keeps the donut compact and the
+      // legend fully visible.
+      responsive: true, maintainAspectRatio: false
     }
   });
 }
@@ -3583,7 +3613,7 @@ function renderTrainerDetail() {
       </div>
       <div>
         <div class="trainer-section-title">По предприятиям</div>
-        <canvas id="t_chartEnterprises"></canvas>
+        <div style="position:relative;height:240px"><canvas id="t_chartEnterprises"></canvas></div>
       </div>
     </div>
 
