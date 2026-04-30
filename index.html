@@ -1078,7 +1078,7 @@ select option { background: var(--card2); }
               <th class="sortable" onclick="sortJournal('date')">Дата</th>
               <th class="sortable" onclick="sortJournal('month')">Месяц</th>
               <th class="sortable" onclick="sortJournal('enterprise')">Предприятие</th>
-              <th>Цех</th>
+              <th style="display:none">Цех</th>
               <th class="sortable" onclick="sortJournal('tabNumber')">Таб. №</th>
               <th class="sortable" onclick="sortJournal('fullName')">ФИО</th>
               <th>Должность</th>
@@ -2517,7 +2517,7 @@ function renderJournal() {
       <td class="mono">${formatDate(r.date)}</td>
       <td><span class="badge badge-blue" style="font-size:11px">${r.month||'—'}</span></td>
       <td>${r.enterprise}</td>
-      <td style="color:var(--text2);font-size:12px">${r.department||'—'}</td>
+      <td style="display:none">${r.department||'—'}</td>
       <td class="mono">${r.tabNumber}</td>
       <td>${r.fullName}</td>
       <td style="color:var(--text2);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.position||'—'}</td>
