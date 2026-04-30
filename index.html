@@ -1281,8 +1281,37 @@ select option { background: var(--card2); }
       <div class="export-card">
         <div class="export-icon">🗑</div>
         <h3>Очистить базу</h3>
-        <p>Удаляет <strong>все записи</strong> из текущей базы данных. Это действие необратимо — сначала сделайте резервную копию.</p>
-        <button class="btn btn-danger" onclick="confirmClear()">⚠ Очистить всё</button>
+        <p>Удаляет <strong>все записи</strong> из текущей базы данных. Перед очисткой автоматически создаётся бэкап в облаке.</p>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:10px;cursor:pointer">
+          <input type="checkbox" id="dangerToggle" onchange="document.getElementById('dangerClearBtn').style.display = this.checked ? 'inline-flex' : 'none'">
+          Показать опасные действия
+        </label>
+        <button class="btn btn-danger" id="dangerClearBtn" onclick="openClearDBModal()" style="display:none">⚠ Очистить всё</button>
+      </div>
+    </div>
+
+    <!-- Backups list -->
+    <div class="table-wrap" style="margin-top:20px">
+      <div class="table-header" style="justify-content:space-between">
+        <span class="table-title">💾 Бэкапы базы данных</span>
+        <button class="btn btn-secondary btn-sm" onclick="manualBackupAndRefresh()">+ Создать бэкап вручную</button>
+      </div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--text3);border-bottom:1px solid var(--border)">
+        Хранится последние ${'<span id="backupsMaxKeep"></span>'} бэкапов. Автоматический бэкап создаётся раз в неделю при первой загрузке приложения.
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:200px">Когда</th>
+              <th style="width:200px">Тип</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="backupsBody">
+            <tr><td colspan="3" style="text-align:center;color:var(--text3);padding:20px">Загрузка списка бэкапов…</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
     <div style="margin-top:20px;display:none" class="table-wrap" id="importPreview">
@@ -1389,6 +1418,29 @@ select option { background: var(--card2); }
       <button class="btn btn-secondary" onclick="closeGroupModal()">Отмена</button>
       <button class="btn btn-danger" id="groupModalDeleteBtn" onclick="groupModalDelete()" style="display:none">🗑 Удалить группу</button>
       <button class="btn btn-primary" onclick="groupModalSave()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLEAR DB MODAL — three-layer protection: toggle + auto-backup + typed phrase -->
+<div class="modal-overlay" id="clearDBModalOverlay">
+  <div class="modal" style="width:520px">
+    <h2 style="color:var(--red)">⚠ Очистить базу данных?</h2>
+    <p style="margin-bottom:14px">Будут удалены <strong id="clearDBCount">все</strong> записей из базы. Это действие отображается во всех отчётах.</p>
+
+    <div id="clearDBBackupStatus" style="padding:10px 12px;background:var(--card2);border-radius:var(--radius2);font-size:13px;margin-bottom:14px;display:flex;align-items:center;gap:8px">
+      <span id="clearDBBackupSpinner">⏳</span>
+      <span id="clearDBBackupMsg">Создаём бэкап в облаке…</span>
+    </div>
+
+    <div class="form-group">
+      <label>Чтобы подтвердить, введите слово <strong style="color:var(--red);font-family:var(--mono)">ОЧИСТИТЬ</strong></label>
+      <input type="text" id="clearDBPhrase" placeholder="ОЧИСТИТЬ" style="width:100%;font-family:var(--mono)" oninput="document.getElementById('clearDBConfirmBtn').disabled = this.value !== 'ОЧИСТИТЬ' || !clearDBBackupReady">
+    </div>
+
+    <div class="modal-actions" style="margin-top:18px">
+      <button class="btn btn-secondary" onclick="closeClearDBModal()">Отмена</button>
+      <button class="btn btn-danger" id="clearDBConfirmBtn" onclick="confirmClearDB()" disabled>Подтвердить очистку</button>
     </div>
   </div>
 </div>
@@ -2511,35 +2563,8 @@ function setupChipMulti(containerId, onChange) {
   if (chipMultiState.has(container)) { renderChipMulti(container, onChange); return; }
 
   chipMultiState.set(container, []);
-  const input = container.querySelector('.chip-multi-input');
-  if (!input) return;
-
-  // Add chip on Enter or when an item is picked from the datalist (input event with full match)
-  input.addEventListener('input', () => {
-    const val = input.value.trim();
-    // datalist autocomplete fires a normal input event; we add the chip when value
-    // exactly matches a datalist option (means user picked one)
-    const list = input.list;
-    if (list && val) {
-      const match = [...list.options].find(o => o.value === val);
-      if (match) {
-        addChip(container, val, onChange);
-        input.value = '';
-      }
-    }
-  });
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && input.value.trim()) {
-      e.preventDefault();
-      addChip(container, input.value.trim(), onChange);
-      input.value = '';
-    } else if (e.key === 'Backspace' && !input.value) {
-      // Remove last chip on backspace in empty input
-      const arr = chipMultiState.get(container);
-      if (arr.length) { arr.pop(); renderChipMulti(container, onChange); onChange(); }
-    }
-  });
-
+  // Note: renderChipMulti rebuilds the input element from scratch and attaches all
+  // listeners there, so we don't need to wire anything to the original input.
   renderChipMulti(container, onChange);
 }
 
@@ -2563,6 +2588,8 @@ function removeChip(container, value, onChange) {
 function renderChipMulti(container, onChange) {
   const arr = chipMultiState.get(container) || [];
   const input = container.querySelector('.chip-multi-input');
+  // Preserve any in-progress text the user is typing (but NOT a value we just consumed —
+  // callers that just added a chip should clear input.value before calling renderChipMulti)
   const inputVal = input ? input.value : '';
   // Rebuild: chips first, then input. Datalist (if any) stays in place.
   const datalist = container.querySelector('datalist');
@@ -2593,16 +2620,20 @@ function renderChipMulti(container, onChange) {
     if (list && val) {
       const match = [...list.options].find(o => o.value === val);
       if (match) {
-        addChip(container, val, onChange);
+        // Clear input BEFORE addChip → renderChipMulti reads the cleared value when
+        // re-creating the input element. Clearing AFTER addChip would set value on the
+        // discarded old input, leaving the visible new one populated with the chip name.
         newInput.value = '';
+        addChip(container, val, onChange);
       }
     }
   });
   newInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && newInput.value.trim()) {
       e.preventDefault();
-      addChip(container, newInput.value.trim(), onChange);
+      const val = newInput.value.trim();
       newInput.value = '';
+      addChip(container, val, onChange);
     } else if (e.key === 'Backspace' && !newInput.value) {
       const a = chipMultiState.get(container);
       if (a.length) { a.pop(); renderChipMulti(container, onChange); onChange(); }
@@ -2957,14 +2988,6 @@ function importExcel(event) {
   event.target.value = '';
 }
 
-function confirmClear() {
-  showModal('Очистить всю базу данных?', 'Это действие удалит ВСЕ ' + db.records.length + ' записей без возможности восстановления. Рекомендуется сначала сделать резервную копию.', () => {
-    db.records = [];
-    markDirty(); refreshAll(); closeModal();
-    toast('База данных очищена', 'success');
-  });
-}
-
 // ============================================================
 // HELPERS
 // ============================================================
@@ -3005,6 +3028,7 @@ function switchTab(name, el) {
   if (name === 'trainers') renderTrainersList();
   if (name === 'trash') renderTrash();
   if (name === 'history') loadHistory();
+  if (name === 'export') renderBackupsList();
 }
 
 function showModal(title, text, onConfirm) {
@@ -3509,6 +3533,8 @@ function groupModalDelete() {
 document.addEventListener('DOMContentLoaded', () => {
   const ov = document.getElementById('groupModalOverlay');
   if (ov) ov.addEventListener('click', e => { if (e.target === ov) closeGroupModal(); });
+  const ov2 = document.getElementById('clearDBModalOverlay');
+  if (ov2) ov2.addEventListener('click', e => { if (e.target === ov2) closeClearDBModal(); });
 });
 
 // ============================================================
@@ -3726,6 +3752,240 @@ async function purgeOldAudit() {
 }
 
 let historyCache = []; // most recent fetched events
+
+// ============================================================
+// BACKUPS — full DB snapshots stored in Supabase
+//
+// Stored in `backups` table (separate from db_state). Each backup is a complete copy
+// of the live db JSON. Used for:
+//   - Auto weekly snapshots (maybeAutoBackup, runs once per page load if last >7d ago)
+//   - Pre-clear safety net (made before "Очистить базу")
+//   - Manual backups initiated from the UI
+//
+// Retention: keep at most BACKUPS_MAX_KEEP newest. Older ones auto-deleted on each save.
+// ============================================================
+const BACKUPS_MAX_KEEP = 4;
+const BACKUP_AUTO_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // weekly
+
+// Create a new backup row in Supabase. Returns true on success.
+// `reason` is short text shown in the UI list: 'auto-weekly', 'before-clear', 'manual', 'before-restore'.
+async function createBackup(reason) {
+  try {
+    const snapshot = cloneDB(db);
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/backups`, {
+      method: 'POST',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ data: snapshot, reason })
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      console.warn('createBackup failed:', t);
+      return false;
+    }
+    // Trim to BACKUPS_MAX_KEEP newest after a successful insert
+    await trimOldBackups();
+    return true;
+  } catch (e) {
+    console.warn('createBackup error:', e.message);
+    return false;
+  }
+}
+
+// Delete all but the newest BACKUPS_MAX_KEEP backups (by created_at desc).
+async function trimOldBackups() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/backups?select=id&order=created_at.desc`,
+      { headers: SB_HEADERS }
+    );
+    if (!res.ok) return;
+    const rows = await res.json();
+    const toDelete = rows.slice(BACKUPS_MAX_KEEP).map(r => r.id);
+    if (!toDelete.length) return;
+    // PostgREST allows DELETE with `id=in.(1,2,3)` filter
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/backups?id=in.(${toDelete.join(',')})`,
+      { method: 'DELETE', headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' } }
+    );
+  } catch (e) {
+    console.warn('trimOldBackups error:', e.message);
+  }
+}
+
+// Get list of backups (newest first). Each item: { id, reason, created_at, size_bytes }.
+async function listBackups() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/backups?select=id,reason,created_at&order=created_at.desc`,
+      { headers: SB_HEADERS }
+    );
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.warn('listBackups error:', e.message);
+    return [];
+  }
+}
+
+// Fetch one backup by id, returning its data field (the full DB snapshot).
+async function fetchBackup(id) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/backups?id=eq.${id}&select=data`,
+    { headers: SB_HEADERS }
+  );
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  if (!rows.length) throw new Error('Бэкап не найден');
+  return rows[0].data;
+}
+
+// Run on page load: if the most recent auto-weekly backup is older than the interval
+// (or doesn't exist), create one. This is "lazy cron" — depends on someone opening
+// the app at least weekly; for our use case (5 active users) that's a safe assumption.
+async function maybeAutoBackup() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/backups?select=created_at&reason=eq.auto-weekly&order=created_at.desc&limit=1`,
+      { headers: SB_HEADERS }
+    );
+    if (!res.ok) return;
+    const rows = await res.json();
+    const last = rows[0]?.created_at ? new Date(rows[0].created_at).getTime() : 0;
+    if (Date.now() - last >= BACKUP_AUTO_INTERVAL_MS) {
+      // Make sure we have data to back up — skip if db is empty (e.g. first load failed)
+      if (db && db.records && db.records.length > 0) {
+        await createBackup('auto-weekly');
+        console.log('Auto-weekly backup created');
+      }
+    }
+  } catch (e) {
+    console.warn('maybeAutoBackup error:', e.message);
+  }
+}
+
+// Restore: replace current db with a backup's snapshot. Creates a 'before-restore'
+// backup of current state first so the operation is reversible.
+async function restoreBackup(id) {
+  toast('Восстановление…', 'success');
+  // 1. Snapshot current state
+  const ok = await createBackup('before-restore');
+  if (!ok) {
+    if (!confirm('Не удалось создать резервный снимок текущего состояния. Продолжить восстановление БЕЗ возможности отката?')) return;
+  }
+  // 2. Fetch the chosen backup
+  let snapshot;
+  try {
+    snapshot = await fetchBackup(id);
+  } catch (e) {
+    toast('Ошибка загрузки бэкапа: ' + e.message, 'error');
+    return;
+  }
+  // 3. Replace local db. Mark dirty + save explicitly so cloud reflects it immediately.
+  db = snapshot;
+  baseSnapshot = cloneDB(db);
+  isDirty = true;
+  await saveDB({ silent: true });
+  refreshAll();
+  toast('База восстановлена из бэкапа', 'success');
+}
+
+// Render the backups list table on the Export tab
+async function renderBackupsList() {
+  const tbody = document.getElementById('backupsBody');
+  if (!tbody) return;
+  document.getElementById('backupsMaxKeep').textContent = BACKUPS_MAX_KEEP;
+  tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:20px">Загрузка…</td></tr>';
+  const list = await listBackups();
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:20px">Нет бэкапов</td></tr>';
+    return;
+  }
+  const reasonLabels = {
+    'auto-weekly':    '<span class="badge badge-blue">Авто (еженедельно)</span>',
+    'manual':         '<span class="badge badge-green">Вручную</span>',
+    'before-clear':   '<span class="badge badge-red">Перед очисткой</span>',
+    'before-restore': '<span class="badge badge-gold">Перед восстановлением</span>'
+  };
+  tbody.innerHTML = list.map(b => {
+    const dt = new Date(b.created_at);
+    const dateStr = `${formatDate(dt.toISOString().slice(0,10))} ${dt.toTimeString().slice(0,5)}`;
+    const label = reasonLabels[b.reason] || `<span class="badge badge-blue">${b.reason||'—'}</span>`;
+    return `<tr>
+      <td class="mono" style="font-size:12px">${dateStr}</td>
+      <td>${label}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="confirmRestoreBackup(${b.id}, '${dateStr}')">↻ Восстановить</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function confirmRestoreBackup(id, dateStr) {
+  showModal('Восстановить из бэкапа?',
+    `Текущая база будет заменена на снимок от ${dateStr}. Перед восстановлением автоматически создастся бэкап текущего состояния, чтобы можно было откатить.`,
+    async () => {
+      closeModal();
+      await restoreBackup(id);
+      renderBackupsList();
+    });
+}
+
+async function manualBackupAndRefresh() {
+  toast('Создаём бэкап…', 'success');
+  const ok = await createBackup('manual');
+  if (ok) {
+    toast('Бэкап создан', 'success');
+    renderBackupsList();
+  } else {
+    toast('Не удалось создать бэкап', 'error');
+  }
+}
+
+// ============================================================
+// CLEAR DB FLOW (3-layer protection)
+// ============================================================
+let clearDBBackupReady = false;
+
+function openClearDBModal() {
+  clearDBBackupReady = false;
+  document.getElementById('clearDBCount').textContent = (db.records || []).filter(r => !r.deleted).length;
+  document.getElementById('clearDBPhrase').value = '';
+  document.getElementById('clearDBConfirmBtn').disabled = true;
+  document.getElementById('clearDBBackupSpinner').textContent = '⏳';
+  document.getElementById('clearDBBackupMsg').textContent = 'Создаём бэкап в облаке…';
+  document.getElementById('clearDBModalOverlay').classList.add('open');
+
+  // Kick off backup creation in the background; user can't confirm until it completes.
+  createBackup('before-clear').then(ok => {
+    if (ok) {
+      clearDBBackupReady = true;
+      document.getElementById('clearDBBackupSpinner').textContent = '✅';
+      document.getElementById('clearDBBackupMsg').textContent = 'Бэкап создан. Доступен в разделе «Бэкапы».';
+      // Re-evaluate confirm button enabled state
+      document.getElementById('clearDBConfirmBtn').disabled = document.getElementById('clearDBPhrase').value !== 'ОЧИСТИТЬ';
+    } else {
+      document.getElementById('clearDBBackupSpinner').textContent = '⚠';
+      document.getElementById('clearDBBackupMsg').textContent = 'Не удалось создать бэкап. Очистка заблокирована.';
+    }
+  });
+}
+
+function closeClearDBModal() {
+  document.getElementById('clearDBModalOverlay').classList.remove('open');
+}
+
+function confirmClearDB() {
+  if (!clearDBBackupReady) { toast('Бэкап ещё не создан', 'error'); return; }
+  if (document.getElementById('clearDBPhrase').value !== 'ОЧИСТИТЬ') { toast('Введите слово точно как указано', 'error'); return; }
+  // Wipe all records (keep refs/groups/QRs intact — only records go)
+  db.records = [];
+  markDirty();
+  refreshAll();
+  closeClearDBModal();
+  // Reset the danger toggle so the button hides itself again
+  const tog = document.getElementById('dangerToggle');
+  if (tog) { tog.checked = false; document.getElementById('dangerClearBtn').style.display = 'none'; }
+  toast('База очищена. Бэкап доступен для восстановления.', 'success');
+  renderBackupsList();
+}
 
 async function loadHistory() {
   const tbody = document.getElementById('historyBody');
@@ -4089,6 +4349,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // One-time housekeeping: purge audit log entries older than retention period
   purgeOldAudit();
+
+  // Lazy-cron weekly backup: create one if last is older than 7 days (or none exist)
+  maybeAutoBackup();
 });
 </script>
 </body>
