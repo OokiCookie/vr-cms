@@ -504,6 +504,23 @@ select option { background: var(--card2); }
 .ref-qr-btn.ref-qr-active:hover {
   background: #155bd4;
 }
+/* Course group rows in ref table */
+.ref-group-row { background: var(--card2); }
+.ref-group-row td { font-weight: 600; }
+.ref-group-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 11px;
+  transition: transform 0.15s;
+}
+.ref-group-toggle.expanded { transform: rotate(90deg); }
+.ref-group-icon { color: var(--blue); margin-right: 4px; }
+.ref-group-child td:first-child { padding-left: 36px !important; }
+.ref-group-child { background: var(--card); }
 /* CHIP MULTISELECT — used in journal and trainer enterprise filters */
 .chip-multi {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -1079,6 +1096,7 @@ select option { background: var(--card2); }
       <div class="table-header" style="justify-content:space-between">
         <span class="table-title">Курсы обучения</span>
         <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary btn-sm" onclick="openGroupModal()">📁 Создать группу</button>
           <input type="text" id="newCourseName" placeholder="Название нового курса" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:6px 10px;font-size:13px;font-family:var(--sans);outline:none;width:280px">
           <button class="btn btn-primary btn-sm" onclick="addRefCourse()">+ Добавить</button>
         </div>
@@ -1350,6 +1368,31 @@ select option { background: var(--card2); }
   </div>
 </div>
 
+<!-- COURSE GROUP MODAL — create/edit a visual grouping of courses -->
+<div class="modal-overlay" id="groupModalOverlay">
+  <div class="modal" style="width:520px">
+    <h2 id="groupModalTitle">Создать группу курсов</h2>
+    <p style="margin-bottom:14px;color:var(--text2);font-size:13px">Группа объединяет несколько курсов справочника визуально. Каждый курс сохраняет свой QR и счётчик записей; группа показывает общую сумму.</p>
+
+    <div class="form-group">
+      <label>Название группы</label>
+      <input type="text" id="groupModalName" placeholder="Например: План ликвидации аварии" style="width:100%">
+    </div>
+
+    <div class="form-group">
+      <label>Курсы в группе</label>
+      <div id="groupModalMembers" style="max-height:300px;overflow-y:auto;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius2);padding:8px"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">Отметьте курсы, которые войдут в эту группу.</div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:18px">
+      <button class="btn btn-secondary" onclick="closeGroupModal()">Отмена</button>
+      <button class="btn btn-danger" id="groupModalDeleteBtn" onclick="groupModalDelete()" style="display:none">🗑 Удалить группу</button>
+      <button class="btn btn-primary" onclick="groupModalSave()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -1522,6 +1565,9 @@ function mergeDB(cloud, base, ours) {
     // Merge QR map: ours wins on per-key conflict (we know what we just changed locally),
     // but cloud entries we never touched are preserved.
     courseQRs:         { ...(cloud.courseQRs||{}), ...(ours.courseQRs||{}) },
+    // Course groups: merge per-key. ours wins on conflict (we just edited it locally),
+    // cloud-only groups (set by other users) are preserved.
+    courseGroups:      { ...(cloud.courseGroups||{}), ...(ours.courseGroups||{}) },
     lastModified: new Date().toISOString()
   };
 }
@@ -2978,8 +3024,108 @@ document.getElementById('modalOverlay').addEventListener('click', function(e) {
 // СПРАВОЧНИКИ (Reference manager)
 // ============================================================
 function renderRefs() {
-  renderRefTable('refCoursesBody', getAllCourses(), 'course', renameCourse, deleteRefCourse, /*withQR=*/true);
-  renderRefTable('refEntBody',     getAllEnterprises(), 'enterprise', renameEnterprise, deleteRefEnterprise);
+  renderRefCoursesTable();
+  renderRefTable('refEntBody', getAllEnterprises(), 'enterprise', renameEnterprise, deleteRefEnterprise);
+}
+
+// Track which course groups are currently expanded in the UI (per-session, not persisted)
+const expandedCourseGroups = new Set();
+
+// Renders the courses ref table with optional group rows.
+// Groups are visual: the underlying records still reference individual courses by name.
+function renderRefCoursesTable() {
+  const tbody = document.getElementById('refCoursesBody');
+  if (!tbody) return;
+
+  const allCourses = getAllCourses(); // [[name, count], ...] sorted by count desc then name asc
+  const groups = db.courseGroups || {}; // { groupName: [memberCourse, ...] }
+
+  // Build set of all child courses across all groups so we can exclude them from the top-level list
+  const childSet = new Set();
+  Object.values(groups).forEach(members => members.forEach(m => childSet.add(m)));
+
+  // Top-level entries: standalone courses (not in any group)
+  const standalone = allCourses.filter(([name]) => !childSet.has(name));
+
+  // Group rows: name + sum of records across members + member list (with their per-course counts)
+  const groupEntries = Object.entries(groups).map(([gname, members]) => {
+    const memberData = members
+      .map(m => allCourses.find(([n]) => n === m) || [m, 0]);
+    const total = memberData.reduce((sum, [, c]) => sum + c, 0);
+    return { name: gname, total, members: memberData };
+  });
+  // Sort groups by total desc, then name
+  groupEntries.sort((a,b) => b.total - a.total || a.name.localeCompare(b.name, 'ru'));
+
+  if (!standalone.length && !groupEntries.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">Нет данных</td></tr>';
+    return;
+  }
+
+  // Render groups first, then standalone courses
+  const rows = [];
+
+  for (const grp of groupEntries) {
+    const expanded = expandedCourseGroups.has(grp.name);
+    const escG = grp.name.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    rows.push(`<tr class="ref-group-row">
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="ref-group-toggle ${expanded?'expanded':''}" onclick="toggleCourseGroup('${escG}')" title="${expanded?'Свернуть':'Развернуть'}">▶</button>
+          <span class="ref-group-icon">📁</span>
+          <span>${grp.name}</span>
+          <span style="color:var(--text3);font-size:11px;margin-left:6px">(курсов: ${grp.members.length})</span>
+        </div>
+      </td>
+      <td class="ref-count ${grp.total > 0 ? 'has-records' : 'no-records'}">${grp.total > 0 ? grp.total : '—'}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="openGroupModal('${escG}')">✏ Изменить</button></td>
+      <td></td>
+    </tr>`);
+    if (expanded) {
+      for (const [mName, mCnt] of grp.members) {
+        rows.push(courseRowHTML(mName, mCnt, true));
+      }
+    }
+  }
+
+  for (const [name, cnt] of standalone) {
+    rows.push(courseRowHTML(name, cnt, false));
+  }
+
+  tbody.innerHTML = rows.join('');
+}
+
+// Helper: render a single course row. `child` adds left padding to indent under a group.
+function courseRowHTML(name, cnt, child) {
+  const safeId = (s) => s.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_').slice(0,40);
+  const id = safeId(name) + '_refCoursesBody';
+  const esc = name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const hasQR = !!(db.courseQRs && db.courseQRs[name]);
+  const title = hasQR ? 'Открыть QR-код анкеты' : 'Добавить QR-код анкеты';
+  const cls = hasQR ? 'ref-qr-btn ref-qr-active' : 'ref-qr-btn';
+  const qrCell = `<button class="${cls}" onclick="openQRModal('${esc}')" title="${title}">▦</button>`;
+  const trClass = child ? 'ref-group-child' : '';
+  return `<tr class="${trClass}">
+    <td style="font-size:13px">
+      <div style="display:flex;align-items:center;gap:8px">
+        ${qrCell}<span>${name}</span>
+      </div>
+    </td>
+    <td class="ref-count ${cnt > 0 ? 'has-records' : 'no-records'}">${cnt > 0 ? cnt : '—'}</td>
+    <td>
+      <div style="display:flex;gap:6px">
+        <input class="ref-rename-input" id="inp_${id}" value="${esc}" placeholder="Новое название">
+        <button class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="renameCourse('${esc}', document.getElementById('inp_${id}').value)">✏ Применить</button>
+      </div>
+    </td>
+    <td><button class="btn btn-danger btn-sm" onclick="deleteRefCourse('${esc}', ${cnt})" title="Удалить">✕</button></td>
+  </tr>`;
+}
+
+function toggleCourseGroup(name) {
+  if (expandedCourseGroups.has(name)) expandedCourseGroups.delete(name);
+  else expandedCourseGroups.add(name);
+  renderRefCoursesTable();
 }
 
 function getAllCourses() {
@@ -3046,6 +3192,12 @@ function renameCourse(oldName, newName) {
     db.courseQRs[newName] = db.courseQRs[oldName];
     delete db.courseQRs[oldName];
   }
+  // Update group memberships: replace oldName with newName in any group that had it
+  if (db.courseGroups) {
+    Object.keys(db.courseGroups).forEach(g => {
+      db.courseGroups[g] = db.courseGroups[g].map(m => m === oldName ? newName : m);
+    });
+  }
   markDirty(); refreshAll(); renderRefs();
   toast(`Переименовано: «${oldName}» → «${newName}» (затронуто записей: ${count})`, 'success');
 }
@@ -3064,6 +3216,13 @@ function _removeCustomCourse(name) {
   if (db.customCourses) db.customCourses = db.customCourses.filter(c => c !== name);
   // Drop QR mapping for the deleted course
   if (db.courseQRs) delete db.courseQRs[name];
+  // Remove from any group that contains it; drop empty groups
+  if (db.courseGroups) {
+    Object.keys(db.courseGroups).forEach(g => {
+      db.courseGroups[g] = db.courseGroups[g].filter(m => m !== name);
+      if (db.courseGroups[g].length === 0) delete db.courseGroups[g];
+    });
+  }
   markDirty(); refreshAll(); renderRefs();
   toast(`Курс «${name}» удалён из справочника`, 'success');
 }
@@ -3250,6 +3409,106 @@ function printQR() {
 document.addEventListener('DOMContentLoaded', () => {
   const ov = document.getElementById('qrModalOverlay');
   if (ov) ov.addEventListener('click', e => { if (e.target === ov) closeQRModal(); });
+});
+
+// ============================================================
+// COURSE GROUPS — purely visual grouping in the courses ref table
+//
+// Storage: db.courseGroups = { "Group A": ["Course 1", "Course 2"], ... }
+// Records reference courses by their individual names; groups are only metadata
+// that change how the ref table is rendered. Sums in the group row are computed
+// from the actual record counts per member course.
+// ============================================================
+
+let editingGroupName = null; // null when creating a new group, otherwise name being edited
+
+function openGroupModal(existingName) {
+  editingGroupName = existingName || null;
+  const isEdit = !!existingName;
+  document.getElementById('groupModalTitle').textContent = isEdit ? 'Редактировать группу' : 'Создать группу курсов';
+  document.getElementById('groupModalDeleteBtn').style.display = isEdit ? 'inline-flex' : 'none';
+  document.getElementById('groupModalName').value = existingName || '';
+
+  // Build checkbox list of all courses. Pre-check those already in the group being edited.
+  const all = getAllCourses().map(([name]) => name);
+  const currentMembers = isEdit ? new Set((db.courseGroups||{})[existingName] || []) : new Set();
+
+  // Also exclude courses already in OTHER groups (a course can only be in one group)
+  const otherGroupMembers = new Set();
+  if (db.courseGroups) {
+    Object.entries(db.courseGroups).forEach(([gname, members]) => {
+      if (gname !== existingName) members.forEach(m => otherGroupMembers.add(m));
+    });
+  }
+
+  const box = document.getElementById('groupModalMembers');
+  box.innerHTML = all.map(name => {
+    const inOther = otherGroupMembers.has(name);
+    const checked = currentMembers.has(name) ? 'checked' : '';
+    const disabled = inOther ? 'disabled' : '';
+    const escAttr = name.replace(/"/g,'&quot;');
+    const label = inOther ? `${name} <span style="color:var(--text3);font-size:10px">(в другой группе)</span>` : name;
+    return `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:13px;${inOther?'opacity:0.5':'cursor:pointer'}">
+      <input type="checkbox" value="${escAttr}" ${checked} ${disabled}> ${label}
+    </label>`;
+  }).join('') || '<div style="color:var(--text3);font-size:13px;padding:10px;text-align:center">Нет курсов в справочнике</div>';
+
+  document.getElementById('groupModalOverlay').classList.add('open');
+}
+
+function closeGroupModal() {
+  document.getElementById('groupModalOverlay').classList.remove('open');
+  editingGroupName = null;
+}
+
+function groupModalSave() {
+  const name = document.getElementById('groupModalName').value.trim();
+  if (!name) { toast('Введите название группы', 'error'); return; }
+  // Collect checked members
+  const checks = document.querySelectorAll('#groupModalMembers input[type="checkbox"]:checked');
+  const members = [...checks].map(c => c.value);
+  if (!members.length) { toast('Выберите хотя бы один курс', 'error'); return; }
+
+  if (!db.courseGroups) db.courseGroups = {};
+
+  // Renaming a group: drop the old key
+  if (editingGroupName && editingGroupName !== name) {
+    delete db.courseGroups[editingGroupName];
+    // Update expanded-state set so the renamed group stays open if it was open
+    if (expandedCourseGroups.has(editingGroupName)) {
+      expandedCourseGroups.delete(editingGroupName);
+      expandedCourseGroups.add(name);
+    }
+  }
+
+  // Prevent duplicate group names (other than the one being edited)
+  if (db.courseGroups[name] && name !== editingGroupName) {
+    toast('Группа с таким названием уже существует', 'error');
+    return;
+  }
+
+  db.courseGroups[name] = members;
+  markDirty();
+  closeGroupModal();
+  renderRefs();
+  toast(editingGroupName ? `Группа «${name}» обновлена` : `Группа «${name}» создана`, 'success');
+}
+
+function groupModalDelete() {
+  if (!editingGroupName) return;
+  if (!confirm(`Удалить группу «${editingGroupName}»? Сами курсы при этом останутся в справочнике.`)) return;
+  if (db.courseGroups) delete db.courseGroups[editingGroupName];
+  expandedCourseGroups.delete(editingGroupName);
+  markDirty();
+  closeGroupModal();
+  renderRefs();
+  toast('Группа удалена', 'success');
+}
+
+// Click outside group modal closes it
+document.addEventListener('DOMContentLoaded', () => {
+  const ov = document.getElementById('groupModalOverlay');
+  if (ov) ov.addEventListener('click', e => { if (e.target === ov) closeGroupModal(); });
 });
 
 // ============================================================
