@@ -271,6 +271,17 @@ tbody tr:last-child td { border-bottom: none; }
 /* FORM */
 .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
 .form-grid-2 { grid-template-columns: 1fr 1fr; }
+/* 12-column grid for the data-entry form: lets each field span the right width
+   instead of stretching short fields (tab number, %) across the full row. */
+.form-grid-12 { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-bottom: 16px; }
+.form-grid-12 > .form-group { min-width: 0; } /* prevent flex children from forcing overflow */
+.col-2  { grid-column: span 2;  }
+.col-3  { grid-column: span 3;  }
+.col-4  { grid-column: span 4;  }
+.col-5  { grid-column: span 5;  }
+.col-6  { grid-column: span 6;  }
+.col-9  { grid-column: span 9;  }
+.col-12 { grid-column: span 12; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
 .form-group label { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
 .form-group input,
@@ -448,10 +459,15 @@ select option { background: var(--card2); }
   .charts-row, .charts-row2 { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr 1fr; }
   .export-grid { grid-template-columns: 1fr; }
+  /* On smaller screens, collapse all 12-col cells to half width */
+  .form-grid-12 { grid-template-columns: repeat(2, 1fr); }
+  .form-grid-12 > [class*="col-"] { grid-column: span 1; }
 }
 @media (max-width: 600px) {
   .kpi-row { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
+  /* On phone, collapse to single column */
+  .form-grid-12 { grid-template-columns: 1fr; }
   .header { padding: 0 14px; }
   .content { padding: 14px; }
 }
@@ -892,48 +908,50 @@ select option { background: var(--card2); }
       <div id="dupWarning" class="alert alert-warn" style="display:none">
         ⚠️ Возможный дубликат: сотрудник с таким табельным номером уже проходил этот курс в этом месяце.
       </div>
-      <div class="form-grid form-grid-2col">
-        <div class="form-group">
+      <div class="form-grid-12">
+        <!-- Row 1: Date, Enterprise, Instructor (with "Add to list" button) -->
+        <div class="form-group col-3">
           <label>Дата обучения *</label>
           <input type="date" id="f_date" onchange="onDateChange()">
         </div>
-        <div class="form-group">
+        <div class="form-group col-5">
           <label>Предприятие *</label>
           <input type="text" id="f_enterprise" list="list_enterprises" placeholder="АксЗФ, АО ЕЭК..." autocomplete="off">
           <datalist id="list_enterprises"></datalist>
         </div>
-        <div class="form-group">
-          <label>Табельный номер *</label>
+        <div class="form-group col-4">
+          <label>Инструктор</label>
+          <div style="display:flex;gap:6px;align-items:flex-start">
+            <input type="text" id="f_instructor" list="list_instructors" placeholder="Смағұл Е. Д." autocomplete="off" style="flex:1;min-width:0">
+            <datalist id="list_instructors"></datalist>
+            <button class="btn btn-secondary btn-sm" style="padding:9px 12px;white-space:nowrap" onclick="saveInstructor()" title="Сохранить инструктора в справочник">+ В список</button>
+          </div>
+          <div id="instructorTags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        </div>
+
+        <!-- Row 2: Tab number, Full name, Position -->
+        <div class="form-group col-2">
+          <label>Табельный *</label>
           <input type="text" id="f_tab" placeholder="20436482" inputmode="numeric" pattern="[0-9]*" oninput="this.value=this.value.replace(/\D/g,''); checkDuplicate()">
         </div>
-        <div class="form-group">
+        <div class="form-group col-6">
           <label>ФИО *</label>
           <input type="text" id="f_name" placeholder="Иванов Иван Иванович">
         </div>
-        <div class="form-group">
+        <div class="form-group col-4">
           <label>Должность</label>
-          <input type="text" id="f_position" list="list_positions" placeholder="Электрогазосварщик..." autocomplete="off">
-          <datalist id="list_positions"></datalist>
+          <input type="text" id="f_position" placeholder="Электрогазосварщик..." autocomplete="off">
         </div>
-        <div class="form-group">
+
+        <!-- Row 3: Course (wide), Completion % -->
+        <div class="form-group col-9">
           <label>Курс обучения *</label>
           <input type="text" id="f_course" list="list_courses" placeholder="Стропальщик..." autocomplete="off" oninput="checkDuplicate()">
           <datalist id="list_courses"></datalist>
         </div>
-        <div class="form-group" style="grid-column:1/-1">
+        <div class="form-group col-3">
           <label>% прохождения курса</label>
-          <input type="number" id="f_completion" min="0" max="100" placeholder="85" style="max-width:200px">
-        </div>
-        <div class="form-group" style="grid-column:1/-1">
-          <label>Инструктор</label>
-          <div style="display:flex;gap:8px;align-items:flex-start">
-            <div style="flex:1;position:relative">
-              <input type="text" id="f_instructor" list="list_instructors" placeholder="Смағұл Е. Д." autocomplete="off" style="width:100%">
-              <datalist id="list_instructors"></datalist>
-            </div>
-            <button class="btn btn-secondary btn-sm" style="padding:9px 14px;white-space:nowrap" onclick="saveInstructor()" title="Сохранить инструктора в справочник">+ В список</button>
-          </div>
-          <div id="instructorTags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+          <input type="number" id="f_completion" min="0" max="100" placeholder="85">
         </div>
       </div>
       <div class="form-actions">
@@ -948,22 +966,22 @@ select option { background: var(--card2); }
         ℹ️ Введите общие данные сверху, добавьте участников ниже. Можно вставить таблицу из Excel (Ctrl+V) — табельный, ФИО, должность, % через табуляцию.
       </div>
 
-      <div class="form-grid form-grid-2col" style="margin-bottom:18px">
-        <div class="form-group">
+      <div class="form-grid-12" style="margin-bottom:18px">
+        <div class="form-group col-3">
           <label>Дата обучения *</label>
           <input type="date" id="g_date">
         </div>
-        <div class="form-group">
+        <div class="form-group col-5">
           <label>Предприятие *</label>
           <input type="text" id="g_enterprise" list="list_enterprises" placeholder="АксЗФ, АО ЕЭК..." autocomplete="off">
         </div>
-        <div class="form-group" style="grid-column:1/-1">
-          <label>Курс обучения *</label>
-          <input type="text" id="g_course" list="list_courses" placeholder="Стропальщик..." autocomplete="off">
-        </div>
-        <div class="form-group" style="grid-column:1/-1">
+        <div class="form-group col-4">
           <label>Инструктор</label>
           <input type="text" id="g_instructor" list="list_instructors" placeholder="Смағұл Е. Д." autocomplete="off">
+        </div>
+        <div class="form-group col-12">
+          <label>Курс обучения *</label>
+          <input type="text" id="g_course" list="list_courses" placeholder="Стропальщик..." autocomplete="off">
         </div>
       </div>
 
@@ -1542,17 +1560,30 @@ async function loadDB() {
     db = await fetchCloudDB();
     // Auto-purge trashed records older than retention period.
     const purged = purgeOldTrash();
+    // One-time migration: backfill ref books from existing records.
+    // Only runs if the flag is unset (i.e. before this version of the app).
+    // Without this, courses/enterprises/instructors that exist in records but not
+    // in refs would silently vanish from autocomplete suggestions when we switched
+    // suggestions to "refs only" mode.
+    let backfilled = 0;
+    let backfillFlagJustSet = false;
+    if (!db.refsBackfilled) {
+      backfilled = backfillRefBooksFromRecords();
+      db.refsBackfilled = true;
+      backfillFlagJustSet = true;
+    }
     baseSnapshot = cloneDB(db);
     isDirty = false;
     setFileStatus('green', '☁ Сохранено');
     document.getElementById('saveBtn').disabled = true;
     refreshAll();
-    // If we purged old trash, mark dirty so it gets saved (without audit log noise).
-    if (purged > 0) {
-      console.log(`Auto-purged ${purged} old trashed records`);
+    // If we changed anything during load (purge, backfill, or just setting the migration flag)
+    // persist it back silently
+    if (purged > 0 || backfilled > 0 || backfillFlagJustSet) {
+      if (purged > 0) console.log(`Auto-purged ${purged} old trashed records`);
+      if (backfilled > 0) console.log(`Backfilled ${backfilled} entries into ref books`);
       isDirty = true;
       document.getElementById('saveBtn').disabled = false;
-      // Trigger save without going through markDirty (no autosave timer needed)
       setTimeout(() => saveDB({ silent: true }), 100);
     }
     return true;
@@ -1563,6 +1594,39 @@ async function loadDB() {
     document.getElementById('saveBtn').disabled = true;
     return false;
   }
+}
+
+// One-time migration helper: scan records for distinct courses/enterprises/instructors,
+// add any that are missing from db.customCourses / db.customEnterprises / db.instructors.
+// Returns total number of new entries added.
+function backfillRefBooksFromRecords() {
+  if (!db.customCourses)     db.customCourses = [];
+  if (!db.customEnterprises) db.customEnterprises = [];
+  if (!db.instructors)       db.instructors = [];
+
+  const recs = db.records || [];
+  let added = 0;
+
+  const courses = new Set(db.customCourses);
+  const ents    = new Set(db.customEnterprises);
+  const instrs  = new Set(db.instructors);
+  const refInstrs = new Set(REF.instructors); // these are baseline, don't dup into customs
+
+  recs.forEach(r => {
+    if (r.course && !courses.has(r.course)) {
+      db.customCourses.push(r.course); courses.add(r.course); added++;
+    }
+    if (r.enterprise && !ents.has(r.enterprise)) {
+      // Don't add if it's already in REF.enterprises (the static seed list)
+      if (!REF.enterprises.includes(r.enterprise)) {
+        db.customEnterprises.push(r.enterprise); ents.add(r.enterprise); added++;
+      }
+    }
+    if (r.instructor && !instrs.has(r.instructor) && !refInstrs.has(r.instructor)) {
+      db.instructors.push(r.instructor); instrs.add(r.instructor); added++;
+    }
+  });
+  return added;
 }
 
 // Smart merge: combine cloud version with our local changes since baseSnapshot.
@@ -1869,7 +1933,7 @@ function addGroupRow(values) {
                oninput="this.value=this.value.replace(/\\D/g,'')"
                placeholder="20436482"></td>
     <td><input type="text" class="g-name" value="${(v.name||'').replace(/"/g,'&quot;')}" placeholder="Иванов И. И."></td>
-    <td><input type="text" class="g-position" list="list_positions" value="${(v.position||'').replace(/"/g,'&quot;')}" placeholder="Должность"></td>
+    <td><input type="text" class="g-position" value="${(v.position||'').replace(/"/g,'&quot;')}" placeholder="Должность"></td>
     <td><input type="number" class="g-completion mono-input" min="0" max="100" value="${v.completion||''}" placeholder="85"></td>
     <td><button class="row-del-btn" onclick="this.closest('tr').remove(); updateGroupCount()" title="Удалить">✕</button></td>
   `;
@@ -2681,29 +2745,25 @@ function removeInstructor(name) {
 }
 
 function updateAutocompleteLists() {
-  const recs = activeRecords();
-  // Enterprises: deduplicate, also treat Latin ERG == Cyrillic ЕРГ
+  // Autocomplete suggestions come from REFERENCES ONLY (REF + customEnterprises/customCourses + db.instructors).
+  // Records are NOT used as a source — otherwise deleting a course/enterprise from the ref book would
+  // not actually remove it from suggestions, since it would still appear via existing records.
+  // Enterprises: deduplicate, also treat Latin ERG == Cyrillic ЕРГ as the same item.
   const toLatinKey = s => s.toLowerCase().replace(/["'«»\s]/g,'').replace(/е/g,'e').replace(/р/g,'r').replace(/г/g,'g').replace(/а/g,'a').replace(/с/g,'s').replace(/о/g,'o').replace(/т/g,'t').replace(/к/g,'k');
   const entMap = new Map();
-  [...REF.enterprises, ...(db.customEnterprises||[]), ...[...new Set(recs.map(r=>r.enterprise))].filter(Boolean)]
+  [...REF.enterprises, ...(db.customEnterprises||[])]
     .forEach(e => { const k = toLatinKey(e); if (!entMap.has(k)) entMap.set(k, e); });
   const allEnterprises = [...entMap.values()].sort();
 
-  const dbCourses = [...new Set(recs.map(r=>r.course))].filter(Boolean);
-  const allCourses = [...new Set([...(db.customCourses||[]), ...dbCourses])].sort();
+  const allCourses = [...new Set(db.customCourses||[])].sort();
 
   const savedInstructors = db.instructors || [];
-  const dbInstructors = [...new Set(recs.map(r=>r.instructor))].filter(Boolean);
-  const allInstructors = [...new Set([...REF.instructors, ...savedInstructors, ...dbInstructors])].sort();
-
-  const dbPositions = [...new Set(recs.map(r=>r.position))].filter(Boolean);
-  const allPositions = [...new Set([...REF.positions, ...dbPositions])].sort();
+  const allInstructors = [...new Set([...REF.instructors, ...savedInstructors])].sort();
 
   const esc = s => s.replace(/"/g, '&quot;');
   document.getElementById('list_enterprises').innerHTML = allEnterprises.map(e=>`<option value="${esc(e)}">`).join('');
   document.getElementById('list_courses').innerHTML = allCourses.map(e=>`<option value="${esc(e)}">`).join('');
   document.getElementById('list_instructors').innerHTML = allInstructors.map(e=>`<option value="${esc(e)}">`).join('');
-  document.getElementById('list_positions').innerHTML = allPositions.map(e=>`<option value="${esc(e)}">`).join('');
 
   // Render instructor tags (saved custom instructors)
   const tagEl = document.getElementById('instructorTags');
