@@ -926,7 +926,6 @@ select option { background: var(--card2); }
             <datalist id="list_instructors"></datalist>
             <button class="btn btn-secondary btn-sm" style="padding:9px 12px;white-space:nowrap" onclick="saveInstructor()" title="Сохранить инструктора в справочник">+ В список</button>
           </div>
-          <div id="instructorTags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
         </div>
 
         <!-- Row 2: Tab number, Full name, Position -->
@@ -2765,13 +2764,6 @@ function updateAutocompleteLists() {
   document.getElementById('list_courses').innerHTML = allCourses.map(e=>`<option value="${esc(e)}">`).join('');
   document.getElementById('list_instructors').innerHTML = allInstructors.map(e=>`<option value="${esc(e)}">`).join('');
 
-  // Render instructor tags (saved custom instructors)
-  const tagEl = document.getElementById('instructorTags');
-  if (tagEl) {
-    tagEl.innerHTML = savedInstructors.length
-      ? savedInstructors.map(i => `<span class="instr-tag">${i}<button onclick="removeInstructor('${esc(i)}')" title="Удалить из списка">✕</button></span>`).join('')
-      : '';
-  }
 }
 
 // ============================================================
