@@ -680,10 +680,6 @@ select option { background: var(--card2); }
   font-size: 12px; color: var(--text2);
 }
 .trainer-stat strong { font-family: var(--mono); color: var(--text); margin-left: 4px; }
-.trainer-filters {
-  display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap;
-  padding: 12px; background: var(--card2); border-radius: var(--radius2);
-}
 .trainer-section {
   margin-top: 22px;
 }
@@ -825,7 +821,12 @@ select option { background: var(--card2); }
   <!-- DASHBOARD TAB -->
   <div class="tab-pane active" id="tab-dashboard">
     <div class="section-header pdf-hide" style="margin-bottom:16px">
-      <div></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <label style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">Год</label>
+        <select id="dashboardYear" onchange="onDashboardYearChange(this.value)" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:7px 10px;font-size:13px;font-family:var(--sans);outline:none">
+          <!-- options populated dynamically by populateYearSelectors() -->
+        </select>
+      </div>
       <button class="btn btn-secondary btn-sm" onclick="openPDFModal('dashboard')">📄 Экспорт в PDF</button>
     </div>
     <div id="noDataMsg" class="alert alert-info" style="display:none">
@@ -853,7 +854,7 @@ select option { background: var(--card2); }
     </div>
     <div class="charts-row">
       <div class="chart-card" data-pdf-section="chartMonths" data-pdf-label="График по месяцам">
-        <div class="chart-title">Обучено по месяцам</div>
+        <div class="chart-title" id="chartMonthsTitle">Обучено по месяцам</div>
         <canvas id="chartMonths"></canvas>
       </div>
       <div class="chart-card" data-pdf-section="chartEnterprises" data-pdf-label="График по предприятиям">
@@ -1054,6 +1055,9 @@ select option { background: var(--card2); }
         <input type="date" class="filter-select" id="filterDateTo" onchange="filterRecords()" style="min-width:140px" title="По">
         <button class="btn btn-secondary btn-sm" onclick="toggleDateRange(false)" title="Одна дата">✕</button>
       </div>
+      <select class="filter-select" id="filterYear" onchange="filterRecords()" style="min-width:110px">
+        <option value="">Все годы</option>
+      </select>
       <select class="filter-select" id="filterMonth" onchange="filterRecords()">
         <option value="">Все месяцы</option>
       </select>
@@ -1078,7 +1082,7 @@ select option { background: var(--card2); }
               <th class="sortable" onclick="sortJournal('date')">Дата</th>
               <th class="sortable" onclick="sortJournal('month')">Месяц</th>
               <th class="sortable" onclick="sortJournal('enterprise')">Предприятие</th>
-              <th style="display:none">Цех</th>
+              <th>Цех</th>
               <th class="sortable" onclick="sortJournal('tabNumber')">Таб. №</th>
               <th class="sortable" onclick="sortJournal('fullName')">ФИО</th>
               <th>Должность</th>
@@ -1519,6 +1523,71 @@ const REF = {
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+// Year filtering for dashboard and journal.
+// Records are tagged with `month: "Март"` only — no year. Year must be derived from
+// the full `date` field. Without this filter, records from different years collapse
+// into the same month bar on the chart.
+let selectedDashboardYear = String(new Date().getFullYear()); // '2026' or 'all'
+
+// Returns the year (as string) of a record, derived from its date.
+// Returns null if the record has no parseable date.
+function recordYear(r) {
+  if (!r || !r.date) return null;
+  const y = String(r.date).slice(0, 4);
+  return /^\d{4}$/.test(y) ? y : null;
+}
+
+// Returns sorted list of distinct years present in active records.
+// Empty array if no records.
+function getYearsFromRecords() {
+  const ys = new Set();
+  activeRecords().forEach(r => { const y = recordYear(r); if (y) ys.add(y); });
+  return [...ys].sort();
+}
+
+// Filter records by the dashboard's selected year. Returns all records if 'all'.
+function filterByDashboardYear(recs) {
+  if (selectedDashboardYear === 'all') return recs;
+  return recs.filter(r => recordYear(r) === selectedDashboardYear);
+}
+
+// Populate the year selector dropdown from the set of years present in records.
+// Always includes the current year (even if no records yet) and an "all years" option.
+function populateYearSelectors() {
+  const yearsInData = getYearsFromRecords();
+  const currentYear = String(new Date().getFullYear());
+  const allYears = new Set(yearsInData);
+  allYears.add(currentYear);
+  const sortedDesc = [...allYears].sort().reverse(); // newest year first in dropdown
+
+  // If selected year is no longer present (e.g. all records of that year were deleted),
+  // fall back to current year
+  if (selectedDashboardYear !== 'all' && !allYears.has(selectedDashboardYear)) {
+    selectedDashboardYear = currentYear;
+  }
+
+  const sel = document.getElementById('dashboardYear');
+  if (sel) {
+    sel.innerHTML = sortedDesc.map(y => `<option value="${y}">${y}</option>`).join('') +
+                    `<option value="all">Все годы</option>`;
+    sel.value = selectedDashboardYear;
+  }
+
+  // Same for journal year filter
+  const jSel = document.getElementById('filterYear');
+  if (jSel) {
+    const cur = jSel.value;
+    jSel.innerHTML = `<option value="">Все годы</option>` +
+                     sortedDesc.map(y => `<option value="${y}">${y}</option>`).join('');
+    jSel.value = cur;
+  }
+}
+
+function onDashboardYearChange(value) {
+  selectedDashboardYear = value;
+  refreshAll();
+}
 
 // ============================================================
 // SUPABASE CLOUD STORAGE + SMART MERGE + AUTOSAVE + BACKGROUND POLL
@@ -2049,6 +2118,7 @@ function saveGroup() {
 // REFRESH / RENDER
 // ============================================================
 function refreshAll() {
+  populateYearSelectors(); // keep year dropdowns in sync with current data set
   updateKPIs();
   updateCharts();
   renderRecentDash();
@@ -2072,13 +2142,17 @@ function refreshAll() {
 }
 
 function updateKPIs() {
-  const recs = activeRecords();
+  // Apply dashboard year filter to all KPIs and breakdown
+  const recs = filterByDashboardYear(activeRecords());
   document.getElementById('kpiTotal').textContent = recs.length.toLocaleString('ru');
   const now = new Date();
   const curMonth = MONTHS[now.getMonth()];
-  const thisMonth = recs.filter(r => r.month === curMonth).length;
+  const curYear  = String(now.getFullYear());
+  // "Текущий месяц" must match BOTH month and year — otherwise records from the same month
+  // in a different year would be counted in (e.g. May 2025 records in May 2026 KPI).
+  const thisMonth = activeRecords().filter(r => r.month === curMonth && recordYear(r) === curYear).length;
   document.getElementById('kpiMonth').textContent = thisMonth;
-  document.getElementById('kpiMonthLabel').textContent = curMonth + ' ' + now.getFullYear();
+  document.getElementById('kpiMonthLabel').textContent = curMonth + ' ' + curYear;
   renderInstructorBreakdown(recs);
 }
 
@@ -2160,7 +2234,15 @@ function renderHTMLBarChart(containerId, labels, data, color) {
 }
 
 function updateCharts() {
-  const recs = activeRecords();
+  // All dashboard charts respect the year filter. Pick year from selector.
+  const recs = filterByDashboardYear(activeRecords());
+  // Update months chart title to indicate the period
+  const titleEl = document.getElementById('chartMonthsTitle');
+  if (titleEl) {
+    titleEl.textContent = selectedDashboardYear === 'all'
+      ? 'Обучено по месяцам (все годы)'
+      : `Обучено по месяцам · ${selectedDashboardYear}`;
+  }
   // Monthly chart — stacked by enterprise (top-8 + "Прочие")
   updateStackedBarChart('chartMonths', recs);
 
@@ -2408,7 +2490,9 @@ function updateHBarChart(id, labels, data, color) {
 }
 
 function renderRecentDash() {
-  const recent = [...activeRecords()].reverse().slice(0, 20);
+  // Recent records on dashboard reflect the year filter — otherwise switching to "2025"
+  // would still show 2026 records on top.
+  const recent = [...filterByDashboardYear(activeRecords())].reverse().slice(0, 20);
   const tbody = document.getElementById('dashRecentBody');
   if (!recent.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет данных</td></tr>'; return; }
   tbody.innerHTML = recent.map(r => `
@@ -2459,6 +2543,7 @@ function sortJournal(field) {
 
 function filterRecords() {
   const search = document.getElementById('searchInput').value.toLowerCase();
+  const year = document.getElementById('filterYear')?.value || '';
   const month = document.getElementById('filterMonth').value;
   const enterprises = getChipMultiValues('filterEnterprise'); // multi-select
   const course = document.getElementById('filterCourse').value;
@@ -2474,6 +2559,7 @@ function filterRecords() {
     if (dateExact && r.date !== dateExact) return false;
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
     if (dateTo && (!r.date || r.date > dateTo)) return false;
+    if (year && recordYear(r) !== year) return false;
     if (month && r.month !== month) return false;
     if (enterprises.length && !enterprises.includes(r.enterprise)) return false;
     if (course && r.course !== course) return false;
@@ -2517,7 +2603,7 @@ function renderJournal() {
       <td class="mono">${formatDate(r.date)}</td>
       <td><span class="badge badge-blue" style="font-size:11px">${r.month||'—'}</span></td>
       <td>${r.enterprise}</td>
-      <td style="display:none">${r.department||'—'}</td>
+      <td style="color:var(--text2);font-size:12px">${r.department||'—'}</td>
       <td class="mono">${r.tabNumber}</td>
       <td>${r.fullName}</td>
       <td style="color:var(--text2);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.position||'—'}</td>
@@ -2559,6 +2645,8 @@ function updateBulkActions() {
 
 function resetFilters() {
   document.getElementById('searchInput').value = '';
+  const yr = document.getElementById('filterYear');
+  if (yr) yr.value = '';
   document.getElementById('filterMonth').value = '';
   clearChipMulti('filterEnterprise', filterRecords);
   document.getElementById('filterCourse').value = '';
@@ -4156,30 +4244,37 @@ function renderTrainerDetail() {
       <button class="btn btn-secondary pdf-hide" onclick="openPDFModal('trainer')">📄 Экспорт в PDF</button>
     </div>
 
-    <div class="trainer-filters pdf-hide">
-      <div class="form-group" style="flex:1;min-width:140px">
-        <label>С даты</label>
-        <input type="date" id="t_dateFrom" onchange="refreshTrainerData()">
+    <div class="filter-row pdf-hide">
+      <!-- Date filter: single date by default, toggle to range (mirrors journal) -->
+      <div id="t_dateFilterSingle" style="display:flex;gap:6px;align-items:center">
+        <input type="date" class="filter-select" id="t_dateExact" onchange="refreshTrainerData()" style="min-width:150px" title="Фильтр по дате">
+        <button class="btn btn-secondary btn-sm" onclick="toggleTrainerDateRange(true)" title="Диапазон дат">📅 Диапазон</button>
       </div>
-      <div class="form-group" style="flex:1;min-width:140px">
-        <label>По дату</label>
-        <input type="date" id="t_dateTo" onchange="refreshTrainerData()">
+      <div id="t_dateFilterRange" style="display:none;gap:6px;align-items:center">
+        <input type="date" class="filter-select" id="t_dateFrom" onchange="refreshTrainerData()" style="min-width:140px" title="С">
+        <span style="color:var(--text3);font-size:12px">—</span>
+        <input type="date" class="filter-select" id="t_dateTo" onchange="refreshTrainerData()" style="min-width:140px" title="По">
+        <button class="btn btn-secondary btn-sm" onclick="toggleTrainerDateRange(false)" title="Одна дата">✕</button>
       </div>
-      <div class="form-group" style="flex:1;min-width:200px">
-        <label>Предприятия</label>
-        <div class="chip-multi" id="t_enterprise">
-          <input type="text" class="chip-multi-input" placeholder="Все предприятия" list="t_enterpriseList" autocomplete="off">
-          <datalist id="t_enterpriseList">
-            ${enterprises.map(e => `<option value="${e.replace(/"/g,'&quot;')}">`).join('')}
-          </datalist>
-        </div>
+      <select class="filter-select" id="t_filterYear" onchange="refreshTrainerData()" style="min-width:110px">
+        <option value="">Все годы</option>
+      </select>
+      <select class="filter-select" id="t_filterMonth" onchange="refreshTrainerData()">
+        <option value="">Все месяцы</option>
+        ${MONTHS.map(m => `<option value="${m}">${m}</option>`).join('')}
+      </select>
+      <div class="chip-multi" id="t_enterprise">
+        <input type="text" class="chip-multi-input" placeholder="Все предприятия" list="t_enterpriseList" autocomplete="off">
+        <datalist id="t_enterpriseList">
+          ${enterprises.map(e => `<option value="${e.replace(/"/g,'&quot;')}">`).join('')}
+        </datalist>
       </div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end" onclick="resetTrainerFilters()">✕ Сброс</button>
+      <button class="btn btn-secondary btn-sm" onclick="resetTrainerFilters()">✕ Сброс</button>
     </div>
 
     <div class="trainer-charts-row" data-pdf-section="t_charts" data-pdf-label="Графики (по месяцам и предприятиям)">
       <div>
-        <div class="trainer-section-title">Обучено по месяцам</div>
+        <div class="trainer-section-title" id="t_chartMonthsTitle">Обучено по месяцам</div>
         <canvas id="t_chartMonths"></canvas>
       </div>
       <div>
@@ -4209,6 +4304,16 @@ function renderTrainerDetail() {
   // Wire up the chip-multi enterprise filter (the container is freshly rendered)
   setupChipMulti('t_enterprise', refreshTrainerData);
 
+  // Populate years dropdown — must happen after render since the select is recreated each time
+  const yearsForTrainer = [...new Set(activeRecords()
+    .filter(r => (r.instructor||'').trim() === selectedTrainer)
+    .map(recordYear).filter(Boolean))].sort().reverse();
+  const yearSel = document.getElementById('t_filterYear');
+  if (yearSel) {
+    yearSel.innerHTML = `<option value="">Все годы</option>` +
+      yearsForTrainer.map(y => `<option value="${y}">${y}</option>`).join('');
+  }
+
   refreshTrainerData();
 }
 
@@ -4216,19 +4321,44 @@ function renderTrainerDetail() {
 function refreshTrainerData() {
   if (!selectedTrainer) return;
 
-  const dateFrom  = document.getElementById('t_dateFrom')?.value || '';
-  const dateTo    = document.getElementById('t_dateTo')?.value || '';
-  const entFilters = getChipMultiValues('t_enterprise'); // multi-select
+  // Pull values from the journal-style filter row
+  const year       = document.getElementById('t_filterYear')?.value || '';
+  const month      = document.getElementById('t_filterMonth')?.value || '';
+  const rangeMode  = document.getElementById('t_dateFilterRange')?.style.display !== 'none';
+  const dateExact  = !rangeMode ? (document.getElementById('t_dateExact')?.value || '') : '';
+  const dateFrom   =  rangeMode ? (document.getElementById('t_dateFrom')?.value  || '') : '';
+  const dateTo     =  rangeMode ? (document.getElementById('t_dateTo')?.value    || '') : '';
+  const entFilters = getChipMultiValues('t_enterprise');
 
   const recs = activeRecords().filter(r => {
     if ((r.instructor||'').trim() !== selectedTrainer) return false;
+    if (dateExact && r.date !== dateExact) return false;
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
     if (dateTo && (!r.date || r.date > dateTo)) return false;
+    if (year && recordYear(r) !== year) return false;
+    if (month && r.month !== month) return false;
     if (entFilters.length && !entFilters.includes(r.enterprise)) return false;
     return true;
   });
 
   document.getElementById('t_totalCount').textContent = recs.length;
+
+  // Update trainer months chart title to indicate what period is being shown
+  const tTitle = document.getElementById('t_chartMonthsTitle');
+  if (tTitle) {
+    let periodLabel = '';
+    if (year)            periodLabel = ` · ${year}`;
+    else if (dateExact)  periodLabel = ` · ${dateExact}`;
+    else if (dateFrom && dateTo) periodLabel = ` · ${dateFrom.slice(0,4) === dateTo.slice(0,4) ? dateFrom.slice(0,4) : dateFrom.slice(0,4) + '–' + dateTo.slice(0,4)}`;
+    else if (dateFrom)   periodLabel = ` · с ${dateFrom.slice(0,4)}`;
+    else if (dateTo)     periodLabel = ` · до ${dateTo.slice(0,4)}`;
+    else {
+      // No date/year filter — warn if data spans multiple years
+      const years = [...new Set(recs.map(r => recordYear(r)).filter(Boolean))];
+      if (years.length > 1) periodLabel = ` · ${years.sort()[0]}–${years.sort().reverse()[0]} (смешанные годы)`;
+    }
+    tTitle.textContent = 'Обучено по месяцам' + periodLabel;
+  }
 
   // Months chart — stacked by enterprise (top-8 + "Прочие"), same logic as dashboard.
   // For a single trainer, this shows which enterprises they trained at, broken down by month.
@@ -4263,9 +4393,41 @@ function refreshTrainerData() {
   }
 }
 
+// Switch trainer date filter between single-date and range modes.
+// Mirrors toggleDateRange in the journal — same shape, different IDs.
+function toggleTrainerDateRange(useRange) {
+  const single = document.getElementById('t_dateFilterSingle');
+  const range  = document.getElementById('t_dateFilterRange');
+  if (!single || !range) return;
+  if (useRange) {
+    document.getElementById('t_dateExact').value = '';
+    single.style.display = 'none';
+    range.style.display  = 'flex';
+  } else {
+    document.getElementById('t_dateFrom').value = '';
+    document.getElementById('t_dateTo').value   = '';
+    range.style.display  = 'none';
+    single.style.display = 'flex';
+  }
+  refreshTrainerData();
+}
+
 function resetTrainerFilters() {
-  if (document.getElementById('t_dateFrom')) document.getElementById('t_dateFrom').value = '';
-  if (document.getElementById('t_dateTo'))   document.getElementById('t_dateTo').value = '';
+  // Reset every filter on the trainer card to its default state
+  const yr = document.getElementById('t_filterYear');
+  if (yr) yr.value = '';
+  const mo = document.getElementById('t_filterMonth');
+  if (mo) mo.value = '';
+  // Date filters: clear both modes and snap back to single-date view
+  if (document.getElementById('t_dateExact')) document.getElementById('t_dateExact').value = '';
+  if (document.getElementById('t_dateFrom'))  document.getElementById('t_dateFrom').value = '';
+  if (document.getElementById('t_dateTo'))    document.getElementById('t_dateTo').value = '';
+  const single = document.getElementById('t_dateFilterSingle');
+  const range  = document.getElementById('t_dateFilterRange');
+  if (single && range) {
+    range.style.display = 'none';
+    single.style.display = 'flex';
+  }
   clearChipMulti('t_enterprise', refreshTrainerData);
   refreshTrainerData();
 }
