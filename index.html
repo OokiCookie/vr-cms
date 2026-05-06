@@ -772,7 +772,7 @@ select option { background: var(--card2); }
   <div class="header-logo">
     <div class="logo-icon">🎓</div>
     <div>
-      <div><span style="font-weight:800">VR Обучение</span> <span class="subtitle">/ CMS система</span></div>
+      <div><span style="font-weight:800">VR Обучение</span> <span class="subtitle">/ CMS система</span> <span id="envBadge"></span></div>
     </div>
   </div>
   <div class="header-file">
@@ -1471,11 +1471,27 @@ select option { background: var(--card2); }
 
 <script>
 // ============================================================
-// SUPABASE CONFIG — замените значения ниже на свои из Supabase Dashboard
-// (Project Settings → API)
+// SUPABASE CONFIG — два проекта: боевой и тестовый.
+// Переключение CURRENT_ENV меняет к какому подключаемся.
+// Тестовый проект имеет ключ нового формата (sb_publishable_*),
+// боевой — старого (eyJ... JWT). Оба формата принимаются API
+// одинаковыми хедерами apikey: и Authorization: Bearer.
 // ============================================================
-const SUPABASE_URL = 'https://uvfydjqvurttsuaahfwb.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2ZnlkanF2dXJ0dHN1YWFoZndiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIyMjIsImV4cCI6MjA5Mjc5ODIyMn0.HeQYXLLOx3bmc2JGaiIPs_Lap27aQGCziaiR--DiZsc';
+const SUPABASE_PROD = {
+  URL: 'https://uvfydjqvurttsuaahfwb.supabase.co',
+  KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2ZnlkanF2dXJ0dHN1YWFoZndiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIyMjIsImV4cCI6MjA5Mjc5ODIyMn0.HeQYXLLOx3bmc2JGaiIPs_Lap27aQGCziaiR--DiZsc'
+};
+const SUPABASE_TEST = {
+  URL: 'https://tffkyrvmayznndnkffut.supabase.co',
+  KEY: 'sb_publishable_b9BpCHHqmCVjM427clWI3A_4nRd-xVa'
+};
+
+// Меняй между 'prod' и 'test' для переключения окружения.
+// На GitHub Pages должен быть 'prod'. Локально для тестов — 'test'.
+const CURRENT_ENV = 'prod';
+
+const SUPABASE_URL = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).URL;
+const SUPABASE_KEY = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).KEY;
 const DB_ROW_ID = 1; // ID единственной строки в таблице db_state
 
 // ============================================================
@@ -1598,8 +1614,163 @@ const SB_HEADERS = {
   'Content-Type': 'application/json'
 };
 
+// ============================================================
+// RECORDS API — paginated CRUD on the `records` table
+//
+// Each record gets one row in the `records` table. Columns use snake_case (PG convention),
+// while in JS we use camelCase. recordToDB/recordFromDB convert between the two.
+//
+// Pagination is necessary because Supabase caps SELECTs at 1000 rows per response by default.
+// fetchAllRecords loops with Range headers until everything is loaded.
+// ============================================================
+const RECORDS_PAGE_SIZE = 1000;
+
+// Map a JS record object to a DB row (camelCase → snake_case for column names).
+// The id, date, month, course, instructor, completion, hours, deleted fields keep their names.
+function recordToDB(rec) {
+  return {
+    id: rec.id,
+    date: rec.date || null,
+    month: rec.month || null,
+    enterprise: rec.enterprise || null,
+    department: rec.department || null,
+    tab_number: rec.tabNumber || null,
+    full_name: rec.fullName || null,
+    position: rec.position || null,
+    course: rec.course || null,
+    completion: (typeof rec.completion === 'number') ? rec.completion : (parseInt(rec.completion) || 0),
+    hours: (typeof rec.hours === 'number') ? rec.hours : (parseInt(rec.hours) || 8),
+    instructor: rec.instructor || null,
+    created_at: rec.createdAt || null,
+    deleted: !!rec.deleted,
+    deleted_at: rec.deletedAt || null
+  };
+}
+
+// Inverse of recordToDB: convert a DB row back to a JS record object.
+function recordFromDB(row) {
+  return {
+    id: row.id,
+    date: row.date || '',
+    month: row.month || '',
+    enterprise: row.enterprise || '',
+    department: row.department || '',
+    tabNumber: row.tab_number || '',
+    fullName: row.full_name || '',
+    position: row.position || '',
+    course: row.course || '',
+    completion: row.completion || 0,
+    hours: row.hours || 8,
+    instructor: row.instructor || '',
+    createdAt: row.created_at || '',
+    deleted: !!row.deleted,
+    deletedAt: row.deleted_at || null
+  };
+}
+
+// Fetch ALL records from the `records` table with pagination via Range header.
+// Returns array of camelCase JS objects (already converted from DB snake_case).
+async function fetchAllRecords() {
+  const all = [];
+  let from = 0;
+  // Safety cap: 50 pages × 1000 = 50k records. Increase if you ever approach this.
+  for (let page = 0; page < 50; page++) {
+    const to = from + RECORDS_PAGE_SIZE - 1;
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc`,
+      { headers: { ...SB_HEADERS, 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
+    );
+    if (!res.ok) throw new Error('fetchAllRecords HTTP ' + res.status);
+    const rows = await res.json();
+    if (!rows.length) break;
+    all.push(...rows.map(recordFromDB));
+    if (rows.length < RECORDS_PAGE_SIZE) break; // last page
+    from += RECORDS_PAGE_SIZE;
+  }
+  return all;
+}
+
+// Insert a single record into the `records` table.
+async function insertRecord(rec) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/records`, {
+    method: 'POST',
+    headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(recordToDB(rec))
+  });
+  if (!res.ok) throw new Error('insertRecord HTTP ' + res.status + ': ' + await res.text());
+}
+
+// Insert multiple records in a single POST. Used for group entry, Excel import, migration.
+async function insertRecordsBatch(records) {
+  if (!records.length) return;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/records`, {
+    method: 'POST',
+    headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(records.map(recordToDB))
+  });
+  if (!res.ok) throw new Error('insertRecordsBatch HTTP ' + res.status + ': ' + await res.text());
+}
+
+// Update specific fields of a record. `patch` is in camelCase; converted to snake_case here.
+async function updateRecord(id, patch) {
+  // Build snake_case patch
+  const snakePatch = {};
+  if ('deleted' in patch)    snakePatch.deleted    = patch.deleted;
+  if ('deletedAt' in patch)  snakePatch.deleted_at = patch.deletedAt;
+  if ('date' in patch)       snakePatch.date       = patch.date;
+  if ('month' in patch)      snakePatch.month      = patch.month;
+  if ('enterprise' in patch) snakePatch.enterprise = patch.enterprise;
+  if ('tabNumber' in patch)  snakePatch.tab_number = patch.tabNumber;
+  if ('fullName' in patch)   snakePatch.full_name  = patch.fullName;
+  if ('position' in patch)   snakePatch.position   = patch.position;
+  if ('course' in patch)     snakePatch.course     = patch.course;
+  if ('completion' in patch) snakePatch.completion = patch.completion;
+  if ('hours' in patch)      snakePatch.hours      = patch.hours;
+  if ('instructor' in patch) snakePatch.instructor = patch.instructor;
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/records?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(snakePatch)
+  });
+  if (!res.ok) throw new Error('updateRecord HTTP ' + res.status + ': ' + await res.text());
+}
+
+// Permanently delete one record from the `records` table.
+async function deleteRecordRow(id) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/records?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' }
+  });
+  if (!res.ok) throw new Error('deleteRecordRow HTTP ' + res.status + ': ' + await res.text());
+}
+
+// Permanently delete many records in a single DELETE call (using PostgREST `id=in.(...)` filter).
+// Keeps the URL under typical limits by chunking IDs into groups of 100.
+async function deleteRecordsBatch(ids) {
+  if (!ids.length) return;
+  const CHUNK = 100;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    const filter = chunk.map(id => encodeURIComponent(id)).join(',');
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/records?id=in.(${filter})`, {
+      method: 'DELETE',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' }
+    });
+    if (!res.ok) throw new Error('deleteRecordsBatch HTTP ' + res.status + ': ' + await res.text());
+  }
+}
+
 // Deep clone via JSON. Used to snapshot db state.
 function cloneDB(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+// Keep baseSnapshot.records in sync with db.records after a successful cloud sync.
+// Records now sync directly to the records table without going through saveDB/markDirty.
+// If we don't update baseSnapshot here, the next saveDB will see all those record changes
+// as "ours" diff and log them again to the audit log.
+function syncBaseSnapshotRecords() {
+  if (baseSnapshot) baseSnapshot.records = cloneDB(db.records);
+}
 
 // Returns only non-deleted records. Use this for ALL display, statistics, filters and exports.
 // Use db.records directly only when adding/modifying records or working with the trash.
@@ -1609,15 +1780,28 @@ function activeRecords() {
 
 // Fetch latest db from cloud. Returns parsed db object or null on error.
 async function fetchCloudDB() {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/db_state?id=eq.${DB_ROW_ID}&select=data`,
-    { headers: SB_HEADERS }
-  );
-  if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
-  const rows = await res.json();
-  if (!rows.length) return { version: '1.0', lastModified: null, records: [] };
-  const data = rows[0].data || { version: '1.0', lastModified: null, records: [] };
-  if (!data.records) data.records = [];
+  // Two parallel requests: db_state (refs/groups/QRs/flags) + records table.
+  // After migration, db_state.data.records is empty; the real records live in the
+  // dedicated `records` table. fetchAllRecords handles pagination automatically.
+  const [stateRes, records] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/db_state?id=eq.${DB_ROW_ID}&select=data`, { headers: SB_HEADERS }),
+    fetchAllRecords()
+  ]);
+  if (!stateRes.ok) throw new Error('HTTP ' + stateRes.status + ' ' + stateRes.statusText);
+  const rows = await stateRes.json();
+  let data;
+  if (!rows.length) {
+    data = { version: '1.0', lastModified: null, records: [] };
+  } else {
+    data = rows[0].data || { version: '1.0', lastModified: null, records: [] };
+  }
+  // Records always come from the dedicated table; db_state.data.records is legacy/migration only.
+  // If the table has rows, use them. Otherwise (pre-migration), fall back to data.records.
+  if (records.length > 0) {
+    data.records = records;
+  } else if (!data.records) {
+    data.records = [];
+  }
   return data;
 }
 
@@ -1626,8 +1810,33 @@ async function loadDB() {
   setFileStatus('yellow', '⏳ Загрузка из облака…');
   try {
     db = await fetchCloudDB();
+
+    // One-time migration v43: move records from db_state.data.records into dedicated `records` table.
+    // Detection: if recordsMigrated flag is unset AND data.records still has entries, do the migration.
+    // This runs only on the very first load after the v43 deploy. After that the flag is set
+    // and the records table is the canonical source.
+    let migratedRecords = 0;
+    if (!db.recordsMigrated && Array.isArray(db.records) && db.records.length > 0) {
+      // Sanity check: are records already in the table from an earlier partial migration?
+      // fetchCloudDB returned data.records from the table if non-empty; but if table is empty
+      // and data.records has entries (legacy state), we know we still need to migrate.
+      try {
+        setFileStatus('yellow', '⏳ Миграция записей в таблицу…');
+        await insertRecordsBatch(db.records);
+        migratedRecords = db.records.length;
+        db.recordsMigrated = true;
+        console.log(`Migrated ${migratedRecords} records to dedicated table`);
+      } catch (mErr) {
+        console.error('Records migration failed:', mErr);
+        toast('Ошибка миграции записей: ' + mErr.message, 'error');
+        // Don't continue load — leave the user in a known state where db has old records
+        setFileStatus('red', '❌ Миграция не выполнена');
+        return false;
+      }
+    }
+
     // Auto-purge trashed records older than retention period.
-    const purged = purgeOldTrash();
+    const purged = await purgeOldTrash();
     // One-time migration: backfill ref books from existing records.
     // Only runs if the flag is unset (i.e. before this version of the app).
     // Without this, courses/enterprises/instructors that exist in records but not
@@ -1645,11 +1854,11 @@ async function loadDB() {
     setFileStatus('green', '☁ Сохранено');
     document.getElementById('saveBtn').disabled = true;
     refreshAll();
-    // If we changed anything during load (purge, backfill, or just setting the migration flag)
-    // persist it back silently
-    if (purged > 0 || backfilled > 0 || backfillFlagJustSet) {
+    // If we changed anything during load, persist it back silently
+    if (purged > 0 || backfilled > 0 || backfillFlagJustSet || migratedRecords > 0) {
       if (purged > 0) console.log(`Auto-purged ${purged} old trashed records`);
       if (backfilled > 0) console.log(`Backfilled ${backfilled} entries into ref books`);
+      if (migratedRecords > 0) toast(`Миграция: ${migratedRecords} записей перенесено в новую таблицу`, 'success');
       isDirty = true;
       document.getElementById('saveBtn').disabled = false;
       setTimeout(() => saveDB({ silent: true }), 100);
@@ -1793,13 +2002,20 @@ async function saveDB(opts = {}) {
       toSave.lastModified = new Date().toISOString();
     }
 
-    // 4. Upsert to cloud
+    // 4. Strip records before persisting db_state.
+    // After migration, records live in the dedicated `records` table — they're inserted/updated
+    // by addRecord/deleteRecord/etc directly. db_state.data should hold only refs, groups,
+    // QRs, instructors, flags. Sending `records: []` keeps the field present (so old code that
+    // checks `data.records` still works) without bloating the row.
+    const stateForCloud = { ...toSave, records: [] };
+
+    // 5. Upsert to cloud (db_state only — records were already synced individually)
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/db_state?on_conflict=id`,
       {
         method: 'POST',
         headers: { ...SB_HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ id: DB_ROW_ID, data: toSave })
+        body: JSON.stringify({ id: DB_ROW_ID, data: stateForCloud })
       }
     );
     if (!res.ok) {
@@ -1807,14 +2023,14 @@ async function saveDB(opts = {}) {
       throw new Error('HTTP ' + res.status + ': ' + errText);
     }
 
-    // 5. Update local state to match what we saved
+    // 6. Update local state to match what we saved
     db = toSave;
     baseSnapshot = cloneDB(toSave);
     isDirty = false;
     document.getElementById('saveBtn').disabled = true;
     setFileStatus('green', '☁ Сохранено');
 
-    // 6. Log audit events to Supabase (fire-and-forget — don't block save success)
+    // 7. Log audit events to Supabase (fire-and-forget — don't block save success)
     if (auditEvents.length) logAuditEvents(auditEvents);
 
     if (conflicted) {
@@ -1888,7 +2104,7 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-function addRecord() {
+async function addRecord() {
   const date = document.getElementById('f_date').value;
   const enterprise = document.getElementById('f_enterprise').value.trim();
   const tab = document.getElementById('f_tab').value.trim();
@@ -1916,33 +2132,59 @@ function addRecord() {
     createdAt: new Date().toISOString()
   };
 
+  // 1. Insert into the dedicated records table (fast — single row to cloud)
+  try {
+    await insertRecord(record);
+  } catch (e) {
+    toast('Ошибка сохранения: ' + e.message, 'error');
+    return;
+  }
+  // 2. Local state — keep in sync with cloud
   db.records.push(record);
-  markDirty();
+  syncBaseSnapshotRecords();
+  // Note: we don't markDirty() for record changes anymore — they sync directly to the records
+  // table. Only ref/group/QR changes flip isDirty (they live in db_state).
   updateAutocompleteLists();
   refreshAll();
   clearForm();
   toast('Запись добавлена', 'success');
 }
 
-function deleteRecord(id) {
+async function deleteRecord(id) {
   const rec = db.records.find(r => r.id === id);
   if (!rec) return;
+  const deletedAt = new Date().toISOString();
+  // Sync first so UI reflects cloud truth
+  try {
+    await updateRecord(id, { deleted: true, deletedAt });
+  } catch (e) {
+    toast('Ошибка удаления: ' + e.message, 'error');
+    return;
+  }
   rec.deleted = true;
-  rec.deletedAt = new Date().toISOString();
-  markDirty();
+  rec.deletedAt = deletedAt;
+  syncBaseSnapshotRecords();
   refreshAll();
   toast('Запись перемещена в корзину', 'success');
 }
 
 function deleteSelected() {
   if (selectedIds.size === 0) return;
-  showModal('Удалить записи?', `Будет перемещено в корзину ${selectedIds.size} записей. Они будут безвозвратно удалены через 30 дней.`, () => {
+  showModal('Удалить записи?', `Будет перемещено в корзину ${selectedIds.size} записей. Они будут безвозвратно удалены через 30 дней.`, async () => {
     const now = new Date().toISOString();
+    const ids = [...selectedIds];
+    // Push update to records table for each. Use Promise.all for parallel requests.
+    try {
+      await Promise.all(ids.map(id => updateRecord(id, { deleted: true, deletedAt: now })));
+    } catch (e) {
+      toast('Ошибка удаления: ' + e.message, 'error');
+      return;
+    }
     db.records.forEach(r => {
       if (selectedIds.has(r.id)) { r.deleted = true; r.deletedAt = now; }
     });
     selectedIds.clear();
-    markDirty();
+    syncBaseSnapshotRecords();
     refreshAll();
     closeModal();
     toast('Записи перемещены в корзину', 'success');
@@ -2103,15 +2345,20 @@ function saveGroup() {
     return;
   }
 
-  db.records.push(...newRecords);
-  markDirty();
-  updateAutocompleteLists();
-  refreshAll();
-  clearGroupForm();
-  const msg = skipped > 0
-    ? `Добавлено: ${newRecords.length}, пропущено: ${skipped}`
-    : `Добавлено записей: ${newRecords.length}`;
-  toast(msg, 'success');
+  // Batch insert all new records to the cloud table in one POST, then sync local state
+  insertRecordsBatch(newRecords)
+    .then(() => {
+      db.records.push(...newRecords);
+      syncBaseSnapshotRecords();
+      updateAutocompleteLists();
+      refreshAll();
+      clearGroupForm();
+      const msg = skipped > 0
+        ? `Добавлено: ${newRecords.length}, пропущено: ${skipped}`
+        : `Добавлено записей: ${newRecords.length}`;
+      toast(msg, 'success');
+    })
+    .catch(e => toast('Ошибка сохранения группы: ' + e.message, 'error'));
 }
 
 // ============================================================
@@ -2953,7 +3200,7 @@ function importJSON(event) {
   document.getElementById('importPreviewTitle').textContent = 'Импорт из JSON: ' + file.name;
   const reader = new FileReader();
   reader.onerror = () => { toast('Не удалось прочитать файл', 'error'); document.getElementById('importPreview').style.display='none'; };
-  reader.onload = e => {
+  reader.onload = async e => {
     showImportProgress('Разбираем данные…', 70);
     try {
       const text = e.target.result.replace(/^\uFEFF/, '');
@@ -2965,8 +3212,38 @@ function importJSON(event) {
       const existingIds = new Set(db.records.map(r => r.id));
       const newRecs = imported.records.filter(nr => nr.id && !existingIds.has(nr.id));
       const dupCount = imported.records.length - newRecs.length;
+
+      // Batch-insert into records table. Chunked by 500 to avoid hitting URL/payload limits.
+      const CHUNK = 500;
+      for (let i = 0; i < newRecs.length; i += CHUNK) {
+        showImportProgress(`Загружаем в облако (${i}/${newRecs.length})…`, 70 + Math.floor(25 * i / newRecs.length));
+        await insertRecordsBatch(newRecs.slice(i, i + CHUNK));
+      }
       db.records.push(...newRecs);
-      markDirty(); refreshAll();
+      syncBaseSnapshotRecords();
+
+      // If the imported JSON has refs/groups/QRs/instructors, merge them into local state
+      // and mark dirty so they get written via saveDB.
+      let refsChanged = false;
+      ['customCourses','customEnterprises','instructors'].forEach(key => {
+        if (Array.isArray(imported[key])) {
+          if (!Array.isArray(db[key])) db[key] = [];
+          const before = db[key].length;
+          imported[key].forEach(v => { if (!db[key].includes(v)) db[key].push(v); });
+          if (db[key].length !== before) refsChanged = true;
+        }
+      });
+      ['courseQRs','courseGroups'].forEach(key => {
+        if (imported[key] && typeof imported[key] === 'object') {
+          if (!db[key]) db[key] = {};
+          Object.entries(imported[key]).forEach(([k, v]) => {
+            if (!(k in db[key])) { db[key][k] = v; refsChanged = true; }
+          });
+        }
+      });
+      if (refsChanged) markDirty();
+
+      refreshAll();
       showImportProgress('Готово', 100);
       showImportResult([
         ['Параметр','Значение'],
@@ -2998,11 +3275,13 @@ function importExcel(event) {
   document.getElementById('importPreviewTitle').textContent = 'Импорт из Excel: ' + file.name;
   const reader = new FileReader();
   reader.onerror = () => { toast('Не удалось прочитать файл', 'error'); document.getElementById('importPreview').style.display='none'; };
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: false, raw: true });
       showImportProgress('Обрабатываем данные… (листов: ' + wb.SheetNames.length + ')', 60);
       let added = 0, skipped = 0;
+      // Buffer all parsed records here, then batch-insert at the end.
+      const addedRecords = [];
 
       wb.SheetNames.forEach(shName => {
         const ws = wb.Sheets[shName];
@@ -3084,7 +3363,7 @@ function importExcel(event) {
             if (!isNaN(d.getTime())) month = MONTHS[d.getMonth()];
           }
 
-          db.records.push({
+          const newRec = {
             id: generateId(),
             date, month,
             enterprise:  get(row, 'enterprise'),
@@ -3097,7 +3376,8 @@ function importExcel(event) {
             hours:       parseInt(get(row, 'hours'))      || 8,
             instructor:  get(row, 'instructor'),
             createdAt:   new Date().toISOString()
-          });
+          };
+          addedRecords.push(newRec);
           added++;
         }
       });
@@ -3106,7 +3386,21 @@ function importExcel(event) {
         toast('Данные не найдены — проверьте формат файла', 'error');
         document.getElementById('importPreview').style.display='none';
       } else {
-        markDirty(); refreshAll();
+        // Batch-insert into records table in chunks of 500, with progress feedback.
+        try {
+          const CHUNK = 500;
+          for (let i = 0; i < addedRecords.length; i += CHUNK) {
+            showImportProgress(`Загружаем в облако (${i}/${addedRecords.length})…`, 70 + Math.floor(25 * i / addedRecords.length));
+            await insertRecordsBatch(addedRecords.slice(i, i + CHUNK));
+          }
+          db.records.push(...addedRecords);
+          syncBaseSnapshotRecords();
+        } catch (e) {
+          toast('Ошибка загрузки в облако: ' + e.message, 'error');
+          document.getElementById('importPreview').style.display='none';
+          return;
+        }
+        refreshAll();
         showImportProgress('Готово', 100);
         showImportResult([
           ['Параметр','Значение'],
@@ -3684,15 +3978,26 @@ const TRASH_RETENTION_DAYS = 30;
 
 // Permanently remove records that have been in trash longer than retention period.
 // Called once on page load. Returns number of records purged.
-function purgeOldTrash() {
+async function purgeOldTrash() {
   const cutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  const before = db.records.length;
-  db.records = db.records.filter(r => {
-    if (!r.deleted) return true;
-    if (!r.deletedAt) return true; // safety: don't purge if missing timestamp
-    return new Date(r.deletedAt).getTime() > cutoff;
+  const toPurge = db.records.filter(r => {
+    if (!r.deleted) return false;
+    if (!r.deletedAt) return false; // safety: don't purge if missing timestamp
+    return new Date(r.deletedAt).getTime() <= cutoff;
   });
-  return before - db.records.length;
+  if (!toPurge.length) return 0;
+  // Delete from cloud first (we want cloud as source of truth). If it fails,
+  // local records remain — they'll be re-tried on next load.
+  try {
+    await deleteRecordsBatch(toPurge.map(r => r.id));
+  } catch (e) {
+    console.warn('purgeOldTrash: cloud delete failed:', e.message);
+    return 0;
+  }
+  const purgedIds = new Set(toPurge.map(r => r.id));
+  db.records = db.records.filter(r => !purgedIds.has(r.id));
+  syncBaseSnapshotRecords();
+  return toPurge.length;
 }
 
 // Days remaining before this record gets auto-purged
@@ -3738,19 +4043,35 @@ function renderTrash() {
   }).join('');
 }
 
-function restoreFromTrash(id) {
+async function restoreFromTrash(id) {
   const rec = db.records.find(r => r.id === id);
   if (!rec) return;
+  try {
+    // Cloud: clear deleted flag (set to false instead of deleting field — column always exists)
+    await updateRecord(id, { deleted: false, deletedAt: null });
+  } catch (e) {
+    toast('Ошибка восстановления: ' + e.message, 'error');
+    return;
+  }
   delete rec.deleted;
   delete rec.deletedAt;
-  markDirty(); refreshAll();
+  syncBaseSnapshotRecords();
+  refreshAll();
   toast('Запись восстановлена', 'success');
 }
 
 function purgeFromTrash(id) {
-  showModal('Удалить навсегда?', 'Запись будет удалена окончательно, без возможности восстановления.', () => {
+  showModal('Удалить навсегда?', 'Запись будет удалена окончательно, без возможности восстановления.', async () => {
+    try {
+      await deleteRecordRow(id);
+    } catch (e) {
+      toast('Ошибка удаления: ' + e.message, 'error');
+      return;
+    }
     db.records = db.records.filter(r => r.id !== id);
-    markDirty(); refreshAll(); closeModal();
+    syncBaseSnapshotRecords();
+    refreshAll();
+    closeModal();
     toast('Запись удалена навсегда', 'success');
   });
 }
@@ -3758,9 +4079,16 @@ function purgeFromTrash(id) {
 function restoreAllTrash() {
   const trashed = db.records.filter(r => r.deleted);
   if (!trashed.length) { toast('Корзина пуста', 'success'); return; }
-  showModal('Восстановить все записи?', `Будет восстановлено ${trashed.length} записей.`, () => {
+  showModal('Восстановить все записи?', `Будет восстановлено ${trashed.length} записей.`, async () => {
+    try {
+      await Promise.all(trashed.map(r => updateRecord(r.id, { deleted: false, deletedAt: null })));
+    } catch (e) {
+      toast('Ошибка восстановления: ' + e.message, 'error');
+      return;
+    }
     db.records.forEach(r => { if (r.deleted) { delete r.deleted; delete r.deletedAt; } });
-    markDirty(); refreshAll(); closeModal();
+    syncBaseSnapshotRecords();
+    refreshAll(); closeModal();
     toast(`Восстановлено: ${trashed.length}`, 'success');
   });
 }
@@ -3768,9 +4096,16 @@ function restoreAllTrash() {
 function emptyTrash() {
   const trashed = db.records.filter(r => r.deleted);
   if (!trashed.length) { toast('Корзина пуста', 'success'); return; }
-  showModal('Очистить корзину?', `Будет удалено навсегда: ${trashed.length} записей. Это действие необратимо.`, () => {
+  showModal('Очистить корзину?', `Будет удалено навсегда: ${trashed.length} записей. Это действие необратимо.`, async () => {
+    try {
+      await deleteRecordsBatch(trashed.map(r => r.id));
+    } catch (e) {
+      toast('Ошибка очистки: ' + e.message, 'error');
+      return;
+    }
     db.records = db.records.filter(r => !r.deleted);
-    markDirty(); refreshAll(); closeModal();
+    syncBaseSnapshotRecords();
+    refreshAll(); closeModal();
     toast(`Удалено навсегда: ${trashed.length}`, 'success');
   });
 }
@@ -4020,7 +4355,23 @@ async function restoreBackup(id) {
     toast('Ошибка загрузки бэкапа: ' + e.message, 'error');
     return;
   }
-  // 3. Replace local db. Mark dirty + save explicitly so cloud reflects it immediately.
+  // 3. Replace cloud records table: delete all current rows, insert all from snapshot.
+  // We do this BEFORE replacing local db so that if it fails, local state isn't half-applied.
+  try {
+    const currentIds = db.records.map(r => r.id);
+    if (currentIds.length) await deleteRecordsBatch(currentIds);
+    const snapshotRecords = Array.isArray(snapshot.records) ? snapshot.records : [];
+    if (snapshotRecords.length) {
+      const CHUNK = 500;
+      for (let i = 0; i < snapshotRecords.length; i += CHUNK) {
+        await insertRecordsBatch(snapshotRecords.slice(i, i + CHUNK));
+      }
+    }
+  } catch (e) {
+    toast('Ошибка восстановления записей: ' + e.message, 'error');
+    return;
+  }
+  // 4. Replace local db. Mark dirty + save explicitly so db_state reflects the snapshot too.
   db = snapshot;
   baseSnapshot = cloneDB(db);
   isDirty = true;
@@ -4112,12 +4463,19 @@ function closeClearDBModal() {
   document.getElementById('clearDBModalOverlay').classList.remove('open');
 }
 
-function confirmClearDB() {
+async function confirmClearDB() {
   if (!clearDBBackupReady) { toast('Бэкап ещё не создан', 'error'); return; }
   if (document.getElementById('clearDBPhrase').value !== 'ОЧИСТИТЬ') { toast('Введите слово точно как указано', 'error'); return; }
-  // Wipe all records (keep refs/groups/QRs intact — only records go)
+  // Wipe all records from the cloud records table, then locally
+  try {
+    const allIds = db.records.map(r => r.id);
+    await deleteRecordsBatch(allIds);
+  } catch (e) {
+    toast('Ошибка очистки: ' + e.message, 'error');
+    return;
+  }
   db.records = [];
-  markDirty();
+  syncBaseSnapshotRecords();
   refreshAll();
   closeClearDBModal();
   // Reset the danger toggle so the button hides itself again
@@ -4531,6 +4889,14 @@ document.addEventListener('DOMContentLoaded', () => {
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
+  // Env badge — visible only in test mode so test stand can't be confused with prod
+  if (CURRENT_ENV === 'test') {
+    const badge = document.getElementById('envBadge');
+    if (badge) {
+      badge.textContent = 'ТЕСТ';
+      badge.style.cssText = 'background:#f5a623;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;margin-left:8px;letter-spacing:0.5px;vertical-align:middle';
+    }
+  }
   updateAutocompleteLists();
   // Set default date to today
   document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
