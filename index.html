@@ -157,13 +157,9 @@ body {
 .kpi-left-col { display: flex; flex-direction: column; gap: 16px; }
 .kpi-left-col .kpi-card { flex: 1; }
 .form-grid-2col { grid-template-columns: repeat(2, 1fr) !important; }
-.instr-tag { display:inline-flex;align-items:center;gap:5px;padding:3px 8px;background:var(--card2);border:1px solid var(--border2);border-radius:4px;font-size:11px;color:var(--text2); }
-.instr-tag button { background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;line-height:1;padding:0; }
-.instr-tag button:hover { color:var(--red); }
 .instr-row { display:flex;align-items:center;gap:10px; }
-.instr-bar-wrap { flex:1;height:6px;background:var(--card2);border-radius:3px;overflow:hidden;min-width:80px; }
+.instr-bar-wrap { flex:1;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;min-width:80px; }
 .instr-bar-fill { height:100%;background:var(--cyan);border-radius:3px; }
-.instr-bar-wrap { background: var(--bg2) !important; }
 .kpi-card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -1488,7 +1484,7 @@ const SUPABASE_TEST = {
 
 // Меняй между 'prod' и 'test' для переключения окружения.
 // На GitHub Pages должен быть 'prod'. Локально для тестов — 'test'.
-const CURRENT_ENV = 'prod';
+const CURRENT_ENV = 'test';
 
 const SUPABASE_URL = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).URL;
 const SUPABASE_KEY = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).KEY;
@@ -1795,6 +1791,10 @@ async function fetchCloudDB() {
   } else {
     data = rows[0].data || { version: '1.0', lastModified: null, records: [] };
   }
+  // Capture legacy records count BEFORE overwriting data.records with table contents.
+  // The migration trigger uses this to know whether legacy storage has unsynced records
+  // — not whether db.records is non-empty (it may already be filled from the table).
+  data._legacyRecordsCount = Array.isArray(data.records) ? data.records.length : 0;
   // Records always come from the dedicated table; db_state.data.records is legacy/migration only.
   // If the table has rows, use them. Otherwise (pre-migration), fall back to data.records.
   if (records.length > 0) {
@@ -1812,19 +1812,21 @@ async function loadDB() {
     db = await fetchCloudDB();
 
     // One-time migration v43: move records from db_state.data.records into dedicated `records` table.
-    // Detection: if recordsMigrated flag is unset AND data.records still has entries, do the migration.
-    // This runs only on the very first load after the v43 deploy. After that the flag is set
-    // and the records table is the canonical source.
+    // Trigger condition: legacy storage (db_state.data.records) has entries AND records table is empty.
+    // We check _legacyRecordsCount (captured in fetchCloudDB before overwriting db.records with
+    // table contents) — using db.records.length here would be wrong, because that field already
+    // reflects the table state if records were imported through the new flow.
     let migratedRecords = 0;
-    if (!db.recordsMigrated && Array.isArray(db.records) && db.records.length > 0) {
-      // Sanity check: are records already in the table from an earlier partial migration?
-      // fetchCloudDB returned data.records from the table if non-empty; but if table is empty
-      // and data.records has entries (legacy state), we know we still need to migrate.
+    let migrationFlagJustSet = false;
+    const legacyCount = db._legacyRecordsCount || 0;
+    const tableHasRecords = db.records.length > 0 && legacyCount === 0;
+    if (!db.recordsMigrated && legacyCount > 0 && !tableHasRecords) {
       try {
         setFileStatus('yellow', '⏳ Миграция записей в таблицу…');
         await insertRecordsBatch(db.records);
         migratedRecords = db.records.length;
         db.recordsMigrated = true;
+        migrationFlagJustSet = true;
         console.log(`Migrated ${migratedRecords} records to dedicated table`);
       } catch (mErr) {
         console.error('Records migration failed:', mErr);
@@ -1833,7 +1835,14 @@ async function loadDB() {
         setFileStatus('red', '❌ Миграция не выполнена');
         return false;
       }
+    } else if (!db.recordsMigrated && tableHasRecords) {
+      // Table already has records (e.g. populated via JSON import), no legacy left to migrate.
+      // Just set the flag so the trigger doesn't fire next time.
+      db.recordsMigrated = true;
+      migrationFlagJustSet = true;
     }
+    // Strip the diagnostic field — don't persist it to db_state
+    delete db._legacyRecordsCount;
 
     // Auto-purge trashed records older than retention period.
     const purged = await purgeOldTrash();
@@ -1855,7 +1864,7 @@ async function loadDB() {
     document.getElementById('saveBtn').disabled = true;
     refreshAll();
     // If we changed anything during load, persist it back silently
-    if (purged > 0 || backfilled > 0 || backfillFlagJustSet || migratedRecords > 0) {
+    if (purged > 0 || backfilled > 0 || backfillFlagJustSet || migratedRecords > 0 || migrationFlagJustSet) {
       if (purged > 0) console.log(`Auto-purged ${purged} old trashed records`);
       if (backfilled > 0) console.log(`Backfilled ${backfilled} entries into ref books`);
       if (migratedRecords > 0) toast(`Миграция: ${migratedRecords} записей перенесено в новую таблицу`, 'success');
@@ -2424,22 +2433,6 @@ function renderInstructorBreakdown(recs) {
   }).join('');
 }
 
-// Wrap a string label into multiple lines for Chart.js (pass array for multi-line)
-function wrapLabel(s, max) {
-  if (!s) return '—';
-  if (s.length <= max) return s;
-  const words = s.split(/\s+/);
-  const lines = [];
-  let line = '';
-  for (const w of words) {
-    const test = line ? line + ' ' + w : w;
-    if (test.length <= max) { line = test; }
-    else { if (line) lines.push(line); line = w.length > max ? w.slice(0, max) + '…' : w; }
-  }
-  if (line) lines.push(line);
-  return lines.length > 1 ? lines : s;
-}
-
 // Pure HTML/CSS bar chart — full control over label wrapping and spacing
 function renderHTMLBarChart(containerId, labels, data, color) {
   const el = document.getElementById(containerId);
@@ -2670,68 +2663,6 @@ function updateDonut(id, labels, data, chartsObj) {
       // Combined with a fixed-height container this keeps the donut compact and the
       // legend fully visible.
       responsive: true, maintainAspectRatio: false
-    }
-  });
-}
-
-function updateHBarChart(id, labels, data, color) {
-  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
-
-  const oldCanvas = document.getElementById(id);
-  if (!oldCanvas) return;
-  const parent = oldCanvas.parentNode;
-  const newCanvas = document.createElement('canvas');
-  newCanvas.id = id;
-
-  // Chart.js spaces ALL rows EQUALLY = totalHeight / numBars.
-  // So we must size every row for the TALLEST label (most lines).
-  const maxLines = Math.max(...(labels || []).map(l => Array.isArray(l) ? l.length : 1));
-  const LINE_PX  = 18;   // pixels per text line
-  const MARGIN   = 22;   // vertical padding per row (top+bottom)
-  const rowH     = maxLines * LINE_PX + MARGIN;  // uniform row height
-  const barThick = Math.round(rowH * 0.45);       // bar = 45% of row
-  const totalH   = Math.max(180, labels.length * rowH + 50);
-  parent.style.height = totalH + 'px';
-
-  parent.replaceChild(newCanvas, oldCanvas);
-  if (!labels || labels.length === 0) return;
-
-  charts[id] = new Chart(newCanvas.getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        backgroundColor: color + 'cc',
-        borderColor: color,
-        borderWidth: 1,
-        borderRadius: 3,
-        barThickness: barThick
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      plugins: { legend: { display: false } },
-      layout: { padding: { top: 6, bottom: 6 } },
-      scales: {
-        x: {
-          grid: { color: '#dcd7cc' },
-          ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } }
-        },
-        y: {
-          type: 'category',
-          grid: { color: 'transparent' },
-          afterFit(scale) { scale.width = 205; },
-          ticks: {
-            color: '#5a5040',
-            font: { family: 'Exo 2', size: 11 },
-            autoSkip: false,
-            padding: 10
-          }
-        }
-      },
-      responsive: true,
-      maintainAspectRatio: false
     }
   });
 }
@@ -3069,13 +3000,6 @@ function saveInstructor() {
   markDirty();
   updateAutocompleteLists();
   toast(`Инструктор "${val}" добавлен в справочник`, 'success');
-}
-
-function removeInstructor(name) {
-  if (!db.instructors) return;
-  db.instructors = db.instructors.filter(i => i !== name);
-  markDirty();
-  updateAutocompleteLists();
 }
 
 function updateAutocompleteLists() {
