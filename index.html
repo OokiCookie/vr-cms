@@ -656,6 +656,26 @@ select option { background: var(--card2); }
   padding: 2px 8px; border-radius: 10px;
 }
 .trainer-row.active .trainer-row-count { background: #fff; color: var(--blue); }
+/* Inline-edit icons (eye + pencil) and input field on each trainer row */
+.trainer-row-icon {
+  background: none; border: none; cursor: pointer;
+  color: var(--text3); font-size: 13px;
+  padding: 2px 4px; line-height: 1; border-radius: 3px;
+  transition: background 0.12s, color 0.12s;
+}
+.trainer-row-icon:hover { background: rgba(0,0,0,0.06); color: var(--text); }
+.trainer-row-edit-input {
+  flex: 1;
+  font-size: 13px; font-weight: 500;
+  background: #fff;
+  border: 1px solid var(--blue);
+  border-radius: 3px;
+  padding: 3px 6px;
+  outline: none;
+  font-family: var(--sans);
+  color: var(--text);
+  min-width: 0;
+}
 .trainer-detail {
   background: var(--card);
   border: 1px solid var(--border);
@@ -1078,7 +1098,6 @@ select option { background: var(--card2); }
               <th class="sortable" onclick="sortJournal('date')">Дата</th>
               <th class="sortable" onclick="sortJournal('month')">Месяц</th>
               <th class="sortable" onclick="sortJournal('enterprise')">Предприятие</th>
-              <th>Цех</th>
               <th class="sortable" onclick="sortJournal('tabNumber')">Таб. №</th>
               <th class="sortable" onclick="sortJournal('fullName')">ФИО</th>
               <th>Должность</th>
@@ -1783,6 +1802,52 @@ function syncBaseSnapshotRecords() {
   if (baseSnapshot) baseSnapshot.records = cloneDB(db.records);
 }
 
+// ============================================================
+// INSTRUCTOR MANAGEMENT — rename / merge / hide
+//
+// Stored on db_state.data:
+//   db.hiddenInstructors = { "Имя Т.Р.": true, ... }
+//
+// Display logic: instructor breakdown panels filter by hiddenInstructors. Records keep
+// their original instructor names (no data loss), so unhiding restores them in the UI.
+// Renaming/merging mutates records.instructor in the cloud table (bulk PATCH) and locally.
+// ============================================================
+
+// Returns true if instructor should be excluded from the active list.
+function isInstructorHidden(name) {
+  return !!(db.hiddenInstructors && db.hiddenInstructors[name]);
+}
+
+// Rename or merge: pushes new name to all records where instructor == oldName.
+// If `newName` is empty string, the field is set to null (effectively un-attributes records).
+// Caller is responsible for awaiting and handling errors.
+async function renameInstructor(oldName, newName) {
+  newName = (newName || '').trim();
+  if (newName === oldName) return;
+  // Note: PATCHing instructor to '' results in empty string, not null. We use null
+  // to signify "no instructor" so that filters/breakdowns can group these together
+  // under "— не указан —".
+  const cloudValue = newName || null;
+  await updateRecordsByField('instructor', oldName, cloudValue);
+  // Mirror locally
+  db.records.forEach(r => { if ((r.instructor || '') === oldName) r.instructor = cloudValue || ''; });
+  syncBaseSnapshotRecords();
+  // Also update db.instructors (custom-saved instructors): remove old, add new if non-empty
+  if (db.instructors) db.instructors = db.instructors.filter(i => i !== oldName);
+  if (newName && db.instructors && !db.instructors.includes(newName)) db.instructors.push(newName);
+  // Drop the hidden flag for old name (no longer exists), preserve for new if it was hidden
+  if (db.hiddenInstructors && db.hiddenInstructors[oldName]) {
+    delete db.hiddenInstructors[oldName];
+  }
+}
+
+// Hide / unhide: pure UI state, doesn't touch records.
+function setInstructorHidden(name, hidden) {
+  if (!db.hiddenInstructors) db.hiddenInstructors = {};
+  if (hidden) db.hiddenInstructors[name] = true;
+  else delete db.hiddenInstructors[name];
+}
+
 // Returns only non-deleted records. Use this for ALL display, statistics, filters and exports.
 // Use db.records directly only when adding/modifying records or working with the trash.
 function activeRecords() {
@@ -2433,7 +2498,11 @@ function renderInstructorBreakdown(recs) {
     const key = (r.instructor || '').trim() || '— не указан —';
     counts[key] = (counts[key] || 0) + 1;
   });
-  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+  // Hidden trainers are excluded from the dashboard view too (managed on the Trainers tab).
+  // "— не указан —" is synthetic and never hidden.
+  const sorted = Object.entries(counts)
+    .filter(([name]) => name === '— не указан —' || !isInstructorHidden(name))
+    .sort((a,b) => b[1]-a[1]);
   const total = recs.length || 1;
   const el = document.getElementById('instructorBreakdown');
   if (!sorted.length) { el.innerHTML = '<span style="color:var(--text3);font-size:12px">Нет данных</span>'; return; }
@@ -2782,7 +2851,7 @@ function renderJournal() {
   document.getElementById('paginationInfo').textContent = `${total} записей`;
 
   if (!page.length) {
-    tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">🔍</div><strong>Ничего не найдено</strong><p>Попробуйте изменить фильтры или условия поиска</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">🔍</div><strong>Ничего не найдено</strong><p>Попробуйте изменить фильтры или условия поиска</p></div></td></tr>';
     document.getElementById('pageBtns').innerHTML = '';
     return;
   }
@@ -2796,7 +2865,6 @@ function renderJournal() {
       <td class="mono">${formatDate(r.date)}</td>
       <td><span class="badge badge-blue" style="font-size:11px">${r.month||'—'}</span></td>
       <td>${r.enterprise}</td>
-      <td style="color:var(--text2);font-size:12px">${r.department||'—'}</td>
       <td class="mono">${r.tabNumber}</td>
       <td>${r.fullName}</td>
       <td style="color:var(--text2);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.position||'—'}</td>
@@ -4442,6 +4510,85 @@ async function confirmClearDB() {
   renderBackupsList();
 }
 
+// ============================================================
+// INSTRUCTOR INLINE EDITING — used by the trainer list on the Trainers tab.
+// Click pencil → row converts to <input>; Enter/blur saves; Esc cancels.
+// Click eye toggles visibility (db.hiddenInstructors flag).
+// ============================================================
+
+// Begin inline-rename: replace the row's name span with an input. Triggered by ✏ click.
+function startInstructorInlineEdit(name, rowEl) {
+  const nameSpan = rowEl.querySelector('.trainer-row-name');
+  if (!nameSpan) return;
+  // Build an input that takes the same visual slot. Stop click propagation so the row's
+  // selectTrainer doesn't fire when user clicks inside the input.
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = name;
+  input.className = 'trainer-row-edit-input';
+  input.onclick = e => e.stopPropagation();
+  input.onkeydown = e => {
+    if (e.key === 'Enter')      { e.preventDefault(); commitInstructorInlineEdit(name, input); }
+    else if (e.key === 'Escape'){ e.preventDefault(); cancelInstructorInlineEdit(input, name, nameSpan); }
+  };
+  // Save on blur unless cancelled. Use a flag to distinguish Esc-cancel from blur-commit.
+  input._cancelled = false;
+  input.onblur = () => { if (!input._cancelled) commitInstructorInlineEdit(name, input); };
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+function cancelInstructorInlineEdit(input, oldName, nameSpan) {
+  input._cancelled = true;
+  // Re-render is the simplest restore — just rerun the list builder
+  renderTrainersList();
+}
+
+async function commitInstructorInlineEdit(oldName, input) {
+  const newName = input.value.trim();
+  // No-op if empty or unchanged
+  if (!newName || newName === oldName) {
+    renderTrainersList();
+    return;
+  }
+  // Detect merge: does any record already have this exact name?
+  const isMerge = activeRecords().some(r => (r.instructor || '').trim() === newName);
+  if (isMerge) {
+    if (!confirm(`Тренер «${newName}» уже существует. Объединить записи под этим именем?`)) {
+      renderTrainersList();
+      return;
+    }
+  }
+  try {
+    await renameInstructor(oldName, newName);
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'error');
+    renderTrainersList();
+    return;
+  }
+  // If we were viewing the renamed trainer, follow the name change in the detail view
+  if (selectedTrainer === oldName) selectedTrainer = newName;
+  markDirty();
+  refreshAll();
+  toast(isMerge
+    ? `Объединено с «${newName}»`
+    : `Переименовано: «${oldName}» → «${newName}»`,
+    'success');
+}
+
+// One-click hide / unhide via eye icon.
+function toggleInstructorHidden(name) {
+  const currentlyHidden = isInstructorHidden(name);
+  setInstructorHidden(name, !currentlyHidden);
+  // If we hid the currently selected trainer, clear selection so the detail panel doesn't
+  // keep showing them.
+  if (!currentlyHidden && selectedTrainer === name) selectedTrainer = null;
+  markDirty();
+  refreshAll();
+  toast(currentlyHidden ? `«${name}» снова в активных` : `«${name}» скрыт`, 'success');
+}
+
 async function loadHistory() {
   const tbody = document.getElementById('historyBody');
   tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:30px">Загрузка истории…</td></tr>';
@@ -4508,10 +4655,11 @@ function getAllTrainers() {
     const name = (r.instructor||'').trim();
     if (name) counts[name] = (counts[name]||0) + 1;
   });
-  // Add trainers from custom + REF lists even if they have no records
-  const fromLists = new Set([...(db.instructors||[]), ...REF.instructors]);
-  fromLists.forEach(n => { if (n && !(n in counts)) counts[n] = 0; });
+  // Only return trainers who actually have records. Empty trainers (from REF.instructors
+  // or db.instructors) are skipped — they have nothing to show on a card and would clutter
+  // the list, especially after rename/merge operations leave behind stale REF entries.
   return Object.entries(counts)
+    .filter(([name]) => !isInstructorHidden(name))
     .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
 }
 
@@ -4519,18 +4667,56 @@ function renderTrainersList() {
   const trainers = getAllTrainers();
   document.getElementById('trainersCount').textContent = trainers.length;
   const list = document.getElementById('trainersList');
-  if (!trainers.length) {
-    list.innerHTML = '<div class="empty-state" style="padding:30px 20px"><p>Нет тренеров</p></div>';
-    return;
-  }
-  list.innerHTML = trainers.map(([name, cnt]) => {
+
+  // Collect hidden trainers separately. They have records but isInstructorHidden is true.
+  // We can't get them from getAllTrainers (it filters hidden out), so compute fresh.
+  const hiddenCounts = {};
+  activeRecords().forEach(r => {
+    const name = (r.instructor || '').trim();
+    if (name && isInstructorHidden(name)) hiddenCounts[name] = (hiddenCounts[name] || 0) + 1;
+  });
+  // Trainers from custom/REF lists that are hidden but have no records
+  const fromLists = new Set([...(db.instructors||[]), ...REF.instructors]);
+  fromLists.forEach(n => { if (n && isInstructorHidden(n) && !(n in hiddenCounts)) hiddenCounts[n] = 0; });
+  const hidden = Object.entries(hiddenCounts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
+
+  // Single row template — used for both visible and hidden lists.
+  // Layout: [name | count | 👁 eye | ✏ pencil]. Both icons stop click propagation so
+  // they don't trigger selectTrainer.
+  const renderRow = (name, cnt, isHidden) => {
     const safe = name.replace(/'/g, "\\'");
     const isActive = name === selectedTrainer ? 'active' : '';
-    return `<div class="trainer-row ${isActive}" onclick="selectTrainer('${safe}')">
+    const opacity = isHidden ? 'opacity:0.55' : '';
+    const eyeIcon = isHidden ? '🙈' : '👁';
+    const eyeTitle = isHidden ? 'Показать тренера' : 'Скрыть тренера';
+    return `<div class="trainer-row ${isActive}" onclick="selectTrainer('${safe}')" style="${opacity}">
       <span class="trainer-row-name">${name}</span>
-      <span class="trainer-row-count">${cnt}</span>
+      <span style="display:inline-flex;align-items:center;gap:8px">
+        <span class="trainer-row-count">${cnt}</span>
+        <button onclick="event.stopPropagation();toggleInstructorHidden('${safe}')" title="${eyeTitle}" class="trainer-row-icon">${eyeIcon}</button>
+        <button onclick="event.stopPropagation();startInstructorInlineEdit('${safe}', this.closest('.trainer-row'))" title="Переименовать тренера" class="trainer-row-icon">✏</button>
+      </span>
     </div>`;
-  }).join('');
+  };
+
+  let html = '';
+  if (!trainers.length && !hidden.length) {
+    html = '<div class="empty-state" style="padding:30px 20px"><p>Нет тренеров</p></div>';
+  } else {
+    html = trainers.map(([name, cnt]) => renderRow(name, cnt, false)).join('');
+    if (hidden.length) {
+      html += `
+        <details style="margin-top:8px;border-top:1px dashed var(--border);padding-top:6px">
+          <summary style="cursor:pointer;font-size:11px;color:var(--text3);user-select:none;padding:6px 14px">
+            Скрытые тренеры (${hidden.length})
+          </summary>
+          <div>
+            ${hidden.map(([name, cnt]) => renderRow(name, cnt, true)).join('')}
+          </div>
+        </details>`;
+    }
+  }
+  list.innerHTML = html;
 }
 
 function selectTrainer(name) {
