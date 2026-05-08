@@ -1484,7 +1484,7 @@ const SUPABASE_TEST = {
 
 // Меняй между 'prod' и 'test' для переключения окружения.
 // На GitHub Pages должен быть 'prod'. Локально для тестов — 'test'.
-const CURRENT_ENV = 'test';
+const CURRENT_ENV = 'prod';
 
 const SUPABASE_URL = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).URL;
 const SUPABASE_KEY = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).KEY;
