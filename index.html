@@ -1757,6 +1757,21 @@ async function deleteRecordsBatch(ids) {
   }
 }
 
+// Bulk update all records where a column equals a given value.
+// Used by renameCourse/renameEnterprise to propagate the new name through every record.
+// Both `column` and `oldValue` are encoded for the URL filter; `newValue` goes in the body.
+async function updateRecordsByField(column, oldValue, newValue) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/records?${column}=eq.${encodeURIComponent(oldValue)}`,
+    {
+      method: 'PATCH',
+      headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ [column]: newValue })
+    }
+  );
+  if (!res.ok) throw new Error('updateRecordsByField HTTP ' + res.status + ': ' + await res.text());
+}
+
 // Deep clone via JSON. Used to snapshot db state.
 function cloneDB(obj) { return JSON.parse(JSON.stringify(obj)); }
 
@@ -3563,11 +3578,21 @@ function renderRefTable(tbodyId, entries, field, renameFn, deleteFn, withQR) {
   }).join('');
 }
 
-function renameCourse(oldName, newName) {
+async function renameCourse(oldName, newName) {
   newName = newName.trim();
   if (!newName || newName === oldName) { toast('Введите новое название', 'error'); return; }
+  // Push the rename to the records table FIRST. If this fails we abort and don't mutate
+  // local state — otherwise local would diverge from cloud and the next backgroundPoll
+  // would silently revert the rename.
+  try {
+    await updateRecordsByField('course', oldName, newName);
+  } catch (e) {
+    toast('Ошибка переименования в облаке: ' + e.message, 'error');
+    return;
+  }
   let count = 0;
   db.records.forEach(r => { if (r.course === oldName) { r.course = newName; count++; } });
+  syncBaseSnapshotRecords();
   if (db.customCourses) db.customCourses = db.customCourses.map(c => c === oldName ? newName : c);
   // Migrate QR mapping along with the rename
   if (db.courseQRs && db.courseQRs[oldName]) {
@@ -3620,11 +3645,19 @@ function addRefCourse() {
   toast(`Курс «${val}» добавлен`, 'success');
 }
 
-function renameEnterprise(oldName, newName) {
+async function renameEnterprise(oldName, newName) {
   newName = newName.trim();
   if (!newName || newName === oldName) { toast('Введите новое название', 'error'); return; }
+  // Same pattern as renameCourse: push to cloud first, then mutate local state
+  try {
+    await updateRecordsByField('enterprise', oldName, newName);
+  } catch (e) {
+    toast('Ошибка переименования в облаке: ' + e.message, 'error');
+    return;
+  }
   let count = 0;
   db.records.forEach(r => { if (r.enterprise === oldName) { r.enterprise = newName; count++; } });
+  syncBaseSnapshotRecords();
   if (db.customEnterprises) db.customEnterprises = db.customEnterprises.map(e => e === oldName ? newName : e);
   markDirty(); refreshAll(); renderRefs();
   toast(`Переименовано: «${oldName}» → «${newName}» (затронуто записей: ${count})`, 'success');
