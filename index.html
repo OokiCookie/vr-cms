@@ -1503,7 +1503,7 @@ const SUPABASE_TEST = {
 
 // Меняй между 'prod' и 'test' для переключения окружения.
 // На GitHub Pages должен быть 'prod'. Локально для тестов — 'test'.
-const CURRENT_ENV = 'prod';
+const CURRENT_ENV = 'test';
 
 const SUPABASE_URL = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).URL;
 const SUPABASE_KEY = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).KEY;
@@ -2340,8 +2340,9 @@ function addGroupRow(values) {
   updateGroupCount();
   // Live counter: update on any input change
   tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateGroupCount));
-  // Attach paste handler to first input of new row (so Ctrl+V from Excel into any input fills the table)
-  tr.querySelector('.g-tab').addEventListener('paste', handleGroupPaste);
+  // Paste handler on every field of the row, so multi-column paste works whether the user
+  // starts from the tab number, name, or any other column.
+  tr.querySelectorAll('input').forEach(inp => inp.addEventListener('paste', handleGroupPaste));
 }
 
 function clearGroupRows() {
@@ -2372,15 +2373,44 @@ function updateGroupCount() {
 // Expected column order: tab, name, position, completion
 function handleGroupPaste(e) {
   const text = (e.clipboardData || window.clipboardData).getData('text');
-  if (!text || text.indexOf('\n') === -1 && text.indexOf('\t') === -1) {
-    // Single value, normal paste — let browser handle it
+  if (!text) return;
+  const hasNewline = text.indexOf('\n') !== -1;
+  const hasTab = text.indexOf('\t') !== -1;
+
+  // No structure → let browser do its normal paste into the focused field
+  if (!hasNewline && !hasTab) return;
+
+  e.preventDefault();
+
+  // Single-row tab-paste (e.g. copied "12345\tИванов И.И." from two adjacent Excel cells):
+  // fill the current row's columns starting from where the user pasted, without touching
+  // other rows. This is the common case when the user pastes one participant at a time.
+  if (!hasNewline) {
+    const tr = e.target.closest('tr');
+    if (!tr) return;
+    const cols = text.replace(/\r/g, '').split('\t');
+    const fields = ['.g-tab', '.g-name', '.g-position', '.g-completion'];
+    // Determine which field the paste target is — start filling from there
+    const targetClass = fields.find(c => e.target.classList.contains(c.slice(1)));
+    const startIdx = targetClass ? fields.indexOf(targetClass) : 0;
+    cols.forEach((val, i) => {
+      const idx = startIdx + i;
+      if (idx >= fields.length) return;
+      const input = tr.querySelector(fields[idx]);
+      if (!input) return;
+      // Sanitize per column type: tab/completion are digits-only
+      if (fields[idx] === '.g-tab' || fields[idx] === '.g-completion') {
+        input.value = val.replace(/\D/g, '');
+      } else {
+        input.value = val.trim();
+      }
+    });
     return;
   }
-  e.preventDefault();
+
+  // Multi-row paste: replace all rows with parsed data (bulk import scenario)
   const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
   if (!lines.length) return;
-
-  // Replace all current rows with parsed data
   document.getElementById('groupRowsBody').innerHTML = '';
   lines.forEach(line => {
     const cols = line.split('\t');
@@ -2752,9 +2782,18 @@ function updateDonut(id, labels, data, chartsObj) {
 }
 
 function renderRecentDash() {
-  // Recent records on dashboard reflect the year filter — otherwise switching to "2025"
-  // would still show 2026 records on top.
-  const recent = [...filterByDashboardYear(activeRecords())].reverse().slice(0, 20);
+  // Show 20 most-recent records by date (desc). Explicit sort, because after v43 records
+  // are loaded from the Supabase table already sorted desc — relying on .reverse() of
+  // db.records pre-v43 push order would now show oldest records instead of newest.
+  // Secondary sort by createdAt to get stable ordering when multiple records share a date.
+  const recent = filterByDashboardYear(activeRecords())
+    .slice()
+    .sort((a, b) => {
+      const d = (b.date || '').localeCompare(a.date || '');
+      if (d !== 0) return d;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    })
+    .slice(0, 20);
   const tbody = document.getElementById('dashRecentBody');
   if (!recent.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет данных</td></tr>'; return; }
   tbody.innerHTML = recent.map(r => `
@@ -2770,7 +2809,12 @@ function renderRecentDash() {
 
 function renderRecentInput() {
   const active = activeRecords();
-  const recent = [...active].reverse().slice(0, 10);
+  // Same sort logic as the dashboard: explicit date desc + createdAt desc for stability
+  const recent = active.slice().sort((a, b) => {
+    const d = (b.date || '').localeCompare(a.date || '');
+    if (d !== 0) return d;
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  }).slice(0, 10);
   const tbody = document.getElementById('recentBody');
   if (!recent.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:30px">Нет записей</td></tr>'; return; }
   tbody.innerHTML = recent.map((r, i) => `
@@ -4877,8 +4921,12 @@ function refreshTrainerData() {
   const coSorted = Object.entries(coCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
   renderHTMLBarChart('t_topCourses', coSorted.map(e=>e[0]), coSorted.map(e=>e[1]), '#0b8a94');
 
-  // Recent records (last 30)
-  const recent = [...recs].reverse().slice(0, 30);
+  // Recent records (last 30) — sorted by date desc, then createdAt desc for stability
+  const recent = recs.slice().sort((a, b) => {
+    const d = (b.date || '').localeCompare(a.date || '');
+    if (d !== 0) return d;
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  }).slice(0, 30);
   const tbody = document.getElementById('t_recentBody');
   if (!recent.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет записей</td></tr>';
