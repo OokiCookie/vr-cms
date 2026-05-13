@@ -338,6 +338,10 @@ select option { background: var(--card2); }
   min-width: 150px;
 }
 .filter-select:focus { border-color: var(--blue); }
+/* Cap the journal's course/instructor filters: a long course name otherwise stretches
+   the select to its full content width and forces filters onto a second row. The dropdown
+   list itself still shows full text. */
+#filterCourse, #filterInstructor { max-width: 220px; }
 /* PAGINATION */
 .pagination {
   display: flex; align-items: center; justify-content: space-between;
@@ -1481,6 +1485,21 @@ select option { background: var(--card2); }
   </div>
 </div>
 
+<!-- AUTH OVERLAY — shown on every load, hidden by JS if hash matches localStorage -->
+<div id="authOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000">
+  <div class="modal" style="width:380px">
+    <h2>Вход в систему</h2>
+    <p>Введите пароль для доступа к VR CMS.</p>
+    <input type="password" id="authPwInput" placeholder="Пароль" autocomplete="current-password"
+           style="width:100%;padding:10px 12px;font-size:14px;border:1px solid var(--border2);border-radius:6px;margin-bottom:8px"
+           onkeydown="if (event.key==='Enter') authSubmit()">
+    <div id="authError" style="color:var(--red);font-size:12px;min-height:16px;margin-bottom:12px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="authSubmit()" style="width:100%">Войти</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -1503,11 +1522,16 @@ const SUPABASE_TEST = {
 
 // Меняй между 'prod' и 'test' для переключения окружения.
 // На GitHub Pages должен быть 'prod'. Локально для тестов — 'test'.
-const CURRENT_ENV = 'prod';
+const CURRENT_ENV = 'test';
 
 const SUPABASE_URL = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).URL;
 const SUPABASE_KEY = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).KEY;
 const DB_ROW_ID = 1; // ID единственной строки в таблице db_state
+
+// Salt for password hashing. Not a secret — its purpose is just to make sure that two systems
+// with the same password don't end up with the same hash, and that pre-computed rainbow tables
+// for SHA-256 don't trivially crack it.
+const AUTH_SALT = 'vr-cms-erg-2026';
 
 // ============================================================
 // STATE
@@ -1527,30 +1551,6 @@ let selectedIds = new Set();
 let charts = {};
 let sortField = 'date';
 let sortDir = 'desc';
-
-// ============================================================
-// REFERENCE DATA (autocomplete lists)
-// ============================================================
-const REF = {
-  enterprises: [
-    'АксЗФ', 'АктЗФ', 'АО ЕЭК', 'АО "ЕЭК"', 'АО "ССГПО"', 'АО "ДГОК"', 'АО "АК"',
-    'ТОО "ERG Service" Аксу', 'ТОО "ERG Service" Павлодар',
-    'ТОО "ЕРГ Ресайклинг"', 'КЭЗ', 'ПАЗ', 'АО "ЕПК"'
-  ],
-  departments: [
-    'БРМЦ', 'ЭС_БФС', 'ТТРЦ', 'ПРП_ЦППР', 'ЦППР', 'РСЦ', 'ЦСО', 'ЭС_ТТРЦ',
-    'ЭлЦ', 'ЭЦ', 'ЦЦ', 'ЦРТО', 'Регион "Центр"', 'ПЦ 2'
-  ],
-  courses: [], // managed via Справочники tab
-  instructors: ['Смағұл Е. Д.', 'Манджиев С.А.'],
-  positions: [
-    'Электрогазосварщик', 'Слесарь-ремонтник', 'Слесарь механосборочных работ',
-    'Токарь', 'Электромонтер по ремонту и обслуживанию электрооборудования',
-    'Слесарь по ремонту ПГТО', 'Котлочист', 'Огнеупорщик', 'Газорезчик',
-    'Электросварщик ручной сварки', 'Горновой ферросплавных печей',
-    'Плавильщик ферросплавов', 'Машинист насосных установок'
-  ]
-};
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -1976,19 +1976,15 @@ function backfillRefBooksFromRecords() {
   const courses = new Set(db.customCourses);
   const ents    = new Set(db.customEnterprises);
   const instrs  = new Set(db.instructors);
-  const refInstrs = new Set(REF.instructors); // these are baseline, don't dup into customs
 
   recs.forEach(r => {
     if (r.course && !courses.has(r.course)) {
       db.customCourses.push(r.course); courses.add(r.course); added++;
     }
     if (r.enterprise && !ents.has(r.enterprise)) {
-      // Don't add if it's already in REF.enterprises (the static seed list)
-      if (!REF.enterprises.includes(r.enterprise)) {
-        db.customEnterprises.push(r.enterprise); ents.add(r.enterprise); added++;
-      }
+      db.customEnterprises.push(r.enterprise); ents.add(r.enterprise); added++;
     }
-    if (r.instructor && !instrs.has(r.instructor) && !refInstrs.has(r.instructor)) {
+    if (r.instructor && !instrs.has(r.instructor)) {
       db.instructors.push(r.instructor); instrs.add(r.instructor); added++;
     }
   });
@@ -3130,20 +3126,47 @@ function saveInstructor() {
 }
 
 function updateAutocompleteLists() {
-  // Autocomplete suggestions come from REFERENCES ONLY (REF + customEnterprises/customCourses + db.instructors).
-  // Records are NOT used as a source — otherwise deleting a course/enterprise from the ref book would
-  // not actually remove it from suggestions, since it would still appear via existing records.
+  // Autocomplete sources mirror what the Справочники tab shows: union of values that appear
+  // in active records and the user-managed reference books (db.customEnterprises /
+  // db.customCourses / db.instructors). Records are included so that values used in real data
+  // are always suggested — otherwise an item visible in the Справочники tab could be missing
+  // from the form's dropdown if the custom list got out of sync.
+  // Side effect: removing an item via ✕ in the ref book won't drop it from suggestions if
+  // records still use it. To fully retire an item, rename or delete its records first.
   // Enterprises: deduplicate, also treat Latin ERG == Cyrillic ЕРГ as the same item.
   const toLatinKey = s => s.toLowerCase().replace(/["'«»\s]/g,'').replace(/е/g,'e').replace(/р/g,'r').replace(/г/g,'g').replace(/а/g,'a').replace(/с/g,'s').replace(/о/g,'o').replace(/т/g,'t').replace(/к/g,'k');
+  const recs = activeRecords();
   const entMap = new Map();
-  [...REF.enterprises, ...(db.customEnterprises||[])]
+  [...recs.map(r => r.enterprise), ...(db.customEnterprises || [])]
+    .filter(Boolean)
     .forEach(e => { const k = toLatinKey(e); if (!entMap.has(k)) entMap.set(k, e); });
   const allEnterprises = [...entMap.values()].sort();
 
-  const allCourses = [...new Set(db.customCourses||[])].sort();
+  // Courses: same pattern. Dedup by normalized key (lowercase + no whitespace) to absorb minor
+  // typos like trailing/leading spaces.
+  const normCourse = s => s.toLowerCase().replace(/\s+/g, '');
+  const courseMap = new Map();
+  [...recs.map(r => r.course), ...(db.customCourses || [])]
+    .filter(Boolean)
+    .forEach(c => { const k = normCourse(c); if (!courseMap.has(k)) courseMap.set(k, c); });
+  const allCourses = [...courseMap.values()].sort();
 
-  const savedInstructors = db.instructors || [];
-  const allInstructors = [...new Set([...REF.instructors, ...savedInstructors])].sort();
+  // Instructors: combine two sources — actual records (so a trainer who has trainings is
+  // always suggested, even if db.instructors is out of sync) and db.instructors (so a trainer
+  // pre-added via the "+ В список" button is suggested before they have any records).
+  // Filter out hidden ones — they shouldn't appear in form suggestions.
+  // Deduplicate by normalized key so 'Смағұл Е. Д.' and 'Смағұл Е.Д.' (different spacing/punct)
+  // collapse to one suggestion. First occurrence wins.
+  // Hidden check is also normalized: if 'Михалкин В.А.' is hidden, 'Михалкин В. А.' (with
+  // an extra space) is also hidden — otherwise the orphan variant slips into suggestions.
+  const normInstr = s => s.toLowerCase().replace(/[\s.\-]/g, '');
+  const hiddenKeys = new Set(Object.keys(db.hiddenInstructors || {}).map(normInstr));
+  const fromRecords = recs.map(r => (r.instructor || '').trim()).filter(Boolean);
+  const instrMap = new Map();
+  [...fromRecords, ...(db.instructors || [])]
+    .filter(n => n && !hiddenKeys.has(normInstr(n)))
+    .forEach(n => { const k = normInstr(n); if (!instrMap.has(k)) instrMap.set(k, n); });
+  const allInstructors = [...instrMap.values()].sort();
 
   const esc = s => s.replace(/"/g, '&quot;');
   document.getElementById('list_enterprises').innerHTML = allEnterprises.map(e=>`<option value="${esc(e)}">`).join('');
@@ -4614,6 +4637,8 @@ async function commitInstructorInlineEdit(oldName, input) {
   // If we were viewing the renamed trainer, follow the name change in the detail view
   if (selectedTrainer === oldName) selectedTrainer = newName;
   markDirty();
+  // Save immediately — same reason as in deleteTrainer.
+  try { await saveDB({ silent: true }); } catch (e) { console.warn('Save after rename failed:', e); }
   refreshAll();
   toast(isMerge
     ? `Объединено с «${newName}»`
@@ -4622,15 +4647,49 @@ async function commitInstructorInlineEdit(oldName, input) {
 }
 
 // One-click hide / unhide via eye icon.
-function toggleInstructorHidden(name) {
+async function toggleInstructorHidden(name) {
   const currentlyHidden = isInstructorHidden(name);
   setInstructorHidden(name, !currentlyHidden);
   // If we hid the currently selected trainer, clear selection so the detail panel doesn't
   // keep showing them.
   if (!currentlyHidden && selectedTrainer === name) selectedTrainer = null;
   markDirty();
+  // Save immediately — same reason as in deleteTrainer.
+  try { await saveDB({ silent: true }); } catch (e) { console.warn('Save after hide toggle failed:', e); }
   refreshAll();
   toast(currentlyHidden ? `«${name}» снова в активных` : `«${name}» скрыт`, 'success');
+}
+
+// Permanently delete a trainer: unlinks them from all their records (records stay in the
+// journal with no instructor) and removes from db.instructors / db.hiddenInstructors.
+// Records themselves are NEVER deleted — only the instructor attribution is cleared.
+async function deleteTrainer() {
+  const name = selectedTrainer;
+  if (!name) return;
+  const cnt = activeRecords().filter(r => (r.instructor||'').trim() === name).length;
+  const msg = cnt > 0
+    ? `Удалить тренера «${name}»?\n\nБудет откреплён от ${cnt} записей — сами записи останутся в журнале, но без инструктора.\n\nЭто действие необратимо.`
+    : `Удалить тренера «${name}»?\n\nЗаписей с ним нет — удаление безопасно.`;
+  if (!confirm(msg)) return;
+  try {
+    // renameInstructor(name, '') will: PATCH instructor=null on cloud records, mirror locally,
+    // remove from db.instructors, drop hidden flag for this name.
+    await renameInstructor(name, '');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'error');
+    return;
+  }
+  // Safety: ensure removed from db.instructors even if records were already empty
+  if (db.instructors) db.instructors = db.instructors.filter(i => i !== name);
+  if (db.hiddenInstructors) delete db.hiddenInstructors[name];
+  selectedTrainer = null;
+  markDirty();
+  // Save immediately, don't wait for the 3s autosave debounce. Otherwise a quick page reload
+  // or background poll can revert db.instructors / db.hiddenInstructors to the cloud version,
+  // even though the records were already PATCHed and now have no owner.
+  try { await saveDB({ silent: true }); } catch (e) { console.warn('Save after delete failed:', e); }
+  refreshAll();
+  toast(`Тренер «${name}» удалён`, 'success');
 }
 
 async function loadHistory() {
@@ -4691,17 +4750,15 @@ function renderHistory() {
 let selectedTrainer = null;       // currently displayed trainer name
 let trainerCharts = {};           // Chart.js instances for trainer page
 
-// Build sorted list of all trainers: those with records (count > 0) first by count desc,
-// then those without records (from db.instructors / REF.instructors) alphabetically.
+// Build sorted list of all trainers who have records, by count desc then alphabetically.
 function getAllTrainers() {
   const counts = {};
   activeRecords().forEach(r => {
     const name = (r.instructor||'').trim();
     if (name) counts[name] = (counts[name]||0) + 1;
   });
-  // Only return trainers who actually have records. Empty trainers (from REF.instructors
-  // or db.instructors) are skipped — they have nothing to show on a card and would clutter
-  // the list, especially after rename/merge operations leave behind stale REF entries.
+  // Only return trainers who actually have records. Orphans in db.instructors (e.g. after
+  // backup restore) are not shown — they have nothing meaningful on a card.
   return Object.entries(counts)
     .filter(([name]) => !isInstructorHidden(name))
     .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
@@ -4714,14 +4771,13 @@ function renderTrainersList() {
 
   // Collect hidden trainers separately. They have records but isInstructorHidden is true.
   // We can't get them from getAllTrainers (it filters hidden out), so compute fresh.
+  // Only trainers with actual records appear — orphans from db.instructors (e.g. after
+  // backup restore) aren't shown.
   const hiddenCounts = {};
   activeRecords().forEach(r => {
     const name = (r.instructor || '').trim();
     if (name && isInstructorHidden(name)) hiddenCounts[name] = (hiddenCounts[name] || 0) + 1;
   });
-  // Trainers from custom/REF lists that are hidden but have no records
-  const fromLists = new Set([...(db.instructors||[]), ...REF.instructors]);
-  fromLists.forEach(n => { if (n && isInstructorHidden(n) && !(n in hiddenCounts)) hiddenCounts[n] = 0; });
   const hidden = Object.entries(hiddenCounts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
 
   // Single row template — used for both visible and hidden lists.
@@ -4786,7 +4842,10 @@ function renderTrainerDetail() {
           <div class="trainer-stat">Всего обучений: <strong id="t_totalCount">—</strong></div>
         </div>
       </div>
-      <button class="btn btn-secondary pdf-hide" onclick="openPDFModal('trainer')">📄 Экспорт в PDF</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-secondary pdf-hide" onclick="deleteTrainer()" title="Удалить тренера" style="color:var(--red);border-color:var(--red)">🗑 Удалить тренера</button>
+        <button class="btn btn-secondary pdf-hide" onclick="openPDFModal('trainer')">📄 Экспорт в PDF</button>
+      </div>
     </div>
 
     <div class="filter-row pdf-hide">
@@ -5077,9 +5136,93 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ============================================================
-// INIT
+// AUTH
 // ============================================================
-document.addEventListener('DOMContentLoaded', async () => {
+// SHA-256 hex digest of (salt + text). Used both at login and to compare with stored hash.
+async function sha256Hex(text) {
+  const buf = new TextEncoder().encode(AUTH_SALT + text);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Fetch the current password hash from cloud. Returns null on network/permission failure
+// so callers can decide whether to fall back to the stored flag.
+async function fetchCloudPasswordHash() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_config?select=password_hash&id=eq.${DB_ROW_ID}`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return rows[0]?.password_hash || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function hideAuthOverlay() {
+  const ov = document.getElementById('authOverlay');
+  if (ov) ov.style.display = 'none';
+}
+
+function showAuthOverlay() {
+  const ov = document.getElementById('authOverlay');
+  if (ov) {
+    ov.style.display = 'flex';
+    setTimeout(() => document.getElementById('authPwInput')?.focus(), 50);
+  }
+}
+
+// Handler for the "Войти" button / Enter in the password field.
+async function authSubmit() {
+  const input = document.getElementById('authPwInput');
+  const errEl = document.getElementById('authError');
+  const pw = (input.value || '').trim();
+  if (!pw) { errEl.textContent = 'Введите пароль'; return; }
+  errEl.textContent = 'Проверка…';
+  const cloudHash = await fetchCloudPasswordHash();
+  if (!cloudHash) {
+    errEl.textContent = 'Не удалось проверить пароль (нет связи с базой)';
+    return;
+  }
+  const inputHash = await sha256Hex(pw);
+  if (inputHash !== cloudHash) {
+    errEl.textContent = 'Неверный пароль';
+    input.value = '';
+    input.focus();
+    return;
+  }
+  // Success — persist and start the app.
+  localStorage.setItem('vr_auth_hash', inputHash);
+  errEl.textContent = '';
+  hideAuthOverlay();
+  startApp();
+}
+
+// Decide on load: skip login if our stored hash matches the cloud one. If cloud is unreachable,
+// trust the stored flag (offline-friendly). If stored hash doesn't match cloud — password was
+// changed, force re-login.
+async function authGate() {
+  const stored = localStorage.getItem('vr_auth_hash');
+  if (!stored) { showAuthOverlay(); return false; }
+  const cloudHash = await fetchCloudPasswordHash();
+  if (cloudHash === null) {
+    // Offline / API down — trust the stored hash so users aren't locked out on flaky networks.
+    return true;
+  }
+  if (stored !== cloudHash) {
+    // Password rotated since last login. Clear stale flag and re-prompt.
+    localStorage.removeItem('vr_auth_hash');
+    showAuthOverlay();
+    return false;
+  }
+  return true;
+}
+
+// Extracted from DOMContentLoaded so it can run either immediately (already authed) or
+// after successful login.
+async function startApp() {
   // Env badge — visible only in test mode so test stand can't be confused with prod
   if (CURRENT_ENV === 'test') {
     const badge = document.getElementById('envBadge');
@@ -5123,6 +5266,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Lazy-cron weekly backup: create one if last is older than 7 days (or none exist)
   maybeAutoBackup();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
+  const ok = await authGate();
+  if (ok) {
+    hideAuthOverlay();
+    startApp();
+  }
+  // If not OK — overlay is visible, user types password, authSubmit() will call startApp().
 });
 </script>
 </body>
