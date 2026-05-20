@@ -3,33 +3,48 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VR Обучение — CMS</title>
+<title>Журнал обучений</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.5.0/dist/tabler-icons.min.css">
 <style>
 :root {
-  --bg: #f2ede3;
-  --bg2: #e9e3d7;
+  /* v2 Stripe-indigo aesthetic — keys preserved, values updated. */
+  --bg: #f6f7fb;
+  --bg2: #ffffff;
   --card: #ffffff;
-  --card2: #f8f4ee;
-  --border: #dcd7cc;
-  --border2: #c8c2b4;
-  --blue: #1a5fc8;
-  --blue2: #2070e0;
-  --cyan: #0b8a94;
-  --gold: #c47a12;
-  --green: #167a35;
-  --red: #c02535;
-  --text: #1a1410;
-  --text2: #5a5040;
-  --text3: #9a8a72;
-  --mono: 'JetBrains Mono', monospace;
-  --sans: 'Exo 2', sans-serif;
-  --radius: 10px;
-  --radius2: 6px;
+  --card2: #f3f4f8;
+  --card3: #fafbfd;
+  --border: #e6e8ef;
+  --border2: #dde0ea;
+  --blue: oklch(0.50 0.18 282);     /* indigo primary */
+  --blue2: oklch(0.55 0.18 282);    /* indigo hover */
+  --blue-soft: oklch(0.96 0.02 282);
+  --blue-ink: oklch(0.36 0.18 282);
+  --cyan: oklch(0.62 0.12 200);
+  --cyan-soft: oklch(0.95 0.04 200);
+  --gold: oklch(0.70 0.14 70);
+  --gold-soft: oklch(0.96 0.05 80);
+  --green: oklch(0.58 0.13 158);
+  --green-soft: oklch(0.95 0.05 158);
+  --red: #dc2626;
+  --red-soft: #fef2f2;
+  --text: #1a1b25;
+  --text2: #5b5f72;
+  --text3: #9ca0b3;
+  --text4: #c4c7d3;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --radius: 12px;
+  --radius2: 8px;
+  --radius-sm: 6px;
+  --shadow-xs: 0 1px 2px rgba(18,21,35,0.05);
+  --shadow-sm: 0 1px 2px rgba(18,21,35,0.05), 0 1px 4px rgba(18,21,35,0.04);
+  --shadow-md: 0 2px 4px rgba(18,21,35,0.06), 0 4px 14px rgba(18,21,35,0.06);
+  --shadow-focus: 0 0 0 3px oklch(0.50 0.18 282 / 0.18);
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 14px; }
@@ -64,11 +79,80 @@ body {
   border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
+  color: #fff;
 }
 .header-logo span {
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.5px;
+}
+.tool-switcher {
+  position: relative;
+}
+.tool-switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px 6px 4px;
+  border-radius: var(--radius2);
+  color: var(--text);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+}
+.tool-switcher-btn:hover { background: var(--card); }
+.tool-switcher-btn .chev {
+  color: var(--text2);
+  font-size: 16px;
+  transition: transform 0.15s;
+}
+.tool-switcher.open .tool-switcher-btn { background: var(--card); }
+.tool-switcher.open .tool-switcher-btn .chev { transform: rotate(180deg); }
+.tool-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  padding: 4px;
+  z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  display: none;
+}
+.tool-switcher.open .tool-menu { display: block; }
+.tool-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.tool-menu-item:hover { background: var(--card); }
+.tool-menu-item.active { background: var(--card); font-weight: 600; }
+.tool-menu-item .ti { font-size: 16px; color: var(--text2); width: 16px; text-align: center; }
+.tool-menu-item.active .ti-check { color: var(--green); margin-left: auto; }
+.tool-menu-item.disabled { color: var(--text3); cursor: default; }
+.tool-menu-item.disabled:hover { background: transparent; }
+.tool-menu-item .soon-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text3);
+  background: var(--card);
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 .header-logo .subtitle { color: var(--text2); font-size: 12px; font-weight: 400; }
 .header-file {
@@ -147,6 +231,29 @@ body {
   border-radius: 10px;
 }
 .nav-tab.active .tab-count { background: #1a3060; color: var(--blue2); }
+/* Admin sub-nav — appears at the top of each admin pane (Refs / Export / History).
+   Layout/typography lives here so HTML doesn't need to repeat inline styles. */
+.admin-sub-nav {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.admin-sub-tab {
+  padding: 10px 18px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+  color: var(--text2);
+  transition: color 0.12s, border-color 0.12s;
+}
+.admin-sub-tab:hover { color: var(--text); }
+.admin-sub-tab.active { color: var(--blue2); border-bottom-color: var(--blue2) !important; }
 /* LAYOUT */
 .content { padding: 24px; }
 .tab-pane { display: none; }
@@ -158,7 +265,7 @@ body {
 .kpi-left-col .kpi-card { flex: 1; }
 .form-grid-2col { grid-template-columns: repeat(2, 1fr) !important; }
 .instr-row { display:flex;align-items:center;gap:10px; }
-.instr-bar-wrap { flex:1;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;min-width:80px; }
+.instr-bar-wrap { flex:1;height:6px;background:var(--card2);border-radius:3px;overflow:hidden;min-width:80px; }
 .instr-bar-fill { height:100%;background:var(--cyan);border-radius:3px; }
 .kpi-card {
   background: var(--card);
@@ -784,16 +891,581 @@ select option { background: var(--card2); }
 }
 /* @page rule is set dynamically via <style id="pdfPageStyle"> when user picks orientation */
 </style>
+<style id="v2-overrides">
+/* ---------- v2 Stripe-indigo refinements ---------- */
+body { font-family: var(--sans); letter-spacing: -0.005em; }
+
+/* HEADER --------------------------------------------------- */
+.header {
+  height: 56px;
+  padding: 0 22px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 rgba(18,21,35,0.02);
+}
+.header-logo { gap: 12px; }
+.header-logo .logo-icon {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--blue) 0%, oklch(0.60 0.18 295) 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset, 0 1px 3px rgba(80,69,229,0.18);
+  font-size: 16px;
+}
+.tool-switcher-btn { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; padding: 7px 9px; }
+.tool-switcher-btn:hover { background: var(--card2); }
+.tool-switcher.open .tool-switcher-btn { background: var(--card2); }
+.tool-menu {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 28px rgba(18,21,35,0.12), 0 0 0 1px rgba(18,21,35,0.04);
+  border-radius: var(--radius2);
+  padding: 5px;
+}
+.tool-menu-item { font-size: 13px; border-radius: var(--radius-sm); padding: 8px 10px; }
+.tool-menu-item .ti { color: var(--text2); }
+.tool-menu-item.active { background: var(--blue-soft); color: var(--blue-ink); font-weight: 600; }
+.tool-menu-item.active .ti { color: var(--blue); }
+.tool-menu-item.active .ti-check { color: var(--blue); }
+.tool-menu-item .soon-badge { background: var(--card2); color: var(--text3); }
+.header-logo .subtitle { font-size: 12px; }
+.file-status {
+  background: var(--green-soft);
+  border: none;
+  border-radius: 20px;
+  padding: 5px 11px;
+  color: var(--green);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: none;
+}
+.file-status .status-dot.green { background: var(--green); box-shadow: none; }
+.file-status .status-dot.yellow { background: var(--gold); box-shadow: none; }
+.file-status .status-dot.red { background: var(--red); box-shadow: none; }
+.file-status .file-path { color: inherit; max-width: 240px; }
+
+/* BUTTONS -------------------------------------------------- */
+.btn {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius2);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow-xs);
+  transition: all 0.15s;
+  letter-spacing: -0.005em;
+}
+.btn:hover { background: var(--card3); border-color: var(--border2); }
+.btn-primary {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+  box-shadow: 0 1px 2px rgba(80,69,229,0.20), inset 0 1px 0 rgba(255,255,255,0.18);
+}
+.btn-primary:hover { background: var(--blue2); border-color: var(--blue2); }
+.btn-secondary {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--card3); border-color: var(--border2); }
+.btn-success {
+  background: var(--green);
+  color: #fff;
+  border: 1px solid var(--green);
+  box-shadow: 0 1px 2px rgba(34,131,80,0.18), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.btn-success:hover { background: oklch(0.53 0.13 158); border-color: oklch(0.53 0.13 158); }
+.btn-success:disabled, .btn-success[disabled] {
+  background: var(--card2); color: var(--text3); border-color: var(--border);
+  box-shadow: none; cursor: not-allowed;
+}
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+  border: 1px solid var(--red);
+  box-shadow: 0 1px 2px rgba(220,38,38,0.18), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
+.btn-sm { padding: 5px 11px; font-size: 12px; }
+
+/* NAV ------------------------------------------------------ */
+.nav {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 18px;
+  gap: 2px;
+}
+.nav-tab {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  padding: 13px 14px;
+  border-bottom: 2px solid transparent;
+  transition: color 0.12s;
+  position: relative;
+}
+.nav-tab:hover { color: var(--text); }
+.nav-tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+.nav-tab .tab-count {
+  background: var(--card2);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.nav-tab.active .tab-count { background: var(--blue-soft); color: var(--blue); }
+
+/* CONTENT / SECTIONS -------------------------------------- */
+.content { padding: 22px 24px; }
+.section-title { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+.section-header { margin-bottom: 18px; }
+
+/* KPI CARDS ----------------------------------------------- */
+.kpi-row, .kpi-row-top { gap: 14px; margin-bottom: 18px; }
+.kpi-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+.charts-row { gap: 14px; margin-bottom: 18px; grid-template-columns: 1.55fr 1fr; }
+.charts-row2 { gap: 14px; }
+@media (max-width: 1100px) { .kpi-row-3 { grid-template-columns: 1fr; } }
+.kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.kpi-card::after { display: none; } /* drop left accent bar */
+.kpi-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+  text-transform: none;
+  letter-spacing: -0.005em;
+  margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.kpi-ic {
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.kpi-ic.ic-indigo { background: var(--blue-soft); color: var(--blue); }
+.kpi-ic.ic-green  { background: var(--green-soft); color: var(--green); }
+.kpi-ic.ic-teal   { background: var(--cyan-soft); color: var(--cyan); }
+.kpi-ic.ic-amber  { background: var(--gold-soft); color: oklch(0.50 0.13 70); }
+.kpi-value {
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.kpi-value .kpi-unit { font-size: 18px; color: var(--text3); font-weight: 500; margin-left: 2px; }
+.kpi-sub { font-size: 12px; color: var(--text3); }
+/* All KPI values use the same ink — visual variety comes from the icon badge. */
+.kpi-card.green .kpi-value,
+.kpi-card.gold .kpi-value,
+.kpi-card.cyan .kpi-value { color: var(--text); }
+
+/* INSTRUCTOR BREAKDOWN INSIDE KPI ------------------------- */
+.instr-row { gap: 12px; }
+.instr-bar-wrap { height: 6px; background: var(--card2); border-radius: 3px; }
+.instr-bar-fill { background: linear-gradient(90deg, var(--cyan), oklch(0.70 0.10 200)); border-radius: 3px; }
+
+/* INSTRUCTOR BREAKDOWN ON BOTTOM ROW (B-style cards) ----- */
+.instr-card-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 6px;
+  padding: 4px 0;
+}
+.instr-card-av {
+  grid-row: 1 / 3;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 600;
+  font-family: var(--sans);
+}
+.instr-card-name {
+  font-size: 13px; color: var(--text); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.instr-card-num {
+  font-size: 12.5px; color: var(--text); font-weight: 600;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+.instr-card-pct { color: var(--text3); font-weight: 500; }
+.instr-card-bar {
+  grid-column: 2 / 4;
+  height: 5px; background: var(--card2); border-radius: 3px; overflow: hidden;
+}
+.instr-card-fill { height: 100%; border-radius: 3px; }
+
+/* CHART CARDS --------------------------------------------- */
+.chart-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+.chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: -0.005em;
+  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.chart-title::before { display: none; }
+
+/* TABLES -------------------------------------------------- */
+.table-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.table-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.table-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text);
+  text-transform: none; letter-spacing: -0.005em;
+  display: inline-flex; align-items: center;
+}
+table { font-size: 13px; }
+thead tr { background: var(--card2); }
+th {
+  font-size: 10.5px; font-weight: 600;
+  color: var(--text2);
+  padding: 11px 14px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+}
+th.sortable:hover { color: var(--blue); }
+th.sort-asc::after, th.sort-desc::after { color: var(--blue); }
+td { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+tbody tr:hover { background: var(--card2); }
+tbody tr:hover td { background: var(--card2); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text2); font-size: 12px; }
+
+/* BADGES -------------------------------------------------- */
+.badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.badge-blue  { background: var(--blue-soft);  color: var(--blue-ink); }
+.badge-green { background: var(--green-soft); color: var(--green); }
+.badge-gold  { background: var(--gold-soft);  color: oklch(0.50 0.13 70); }
+.badge-red   { background: var(--red-soft);   color: var(--red); }
+.dup-badge { background: var(--gold-soft); color: oklch(0.50 0.13 70); border-radius: 4px; }
+
+/* PROGRESS ------------------------------------------------ */
+.progress-bar { height: 6px; background: var(--card2); border-radius: 3px; }
+.progress-fill { border-radius: 3px; }
+.progress-val { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 500; color: var(--text); }
+
+/* FORMS --------------------------------------------------- */
+.form-group label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.form-group input,
+.form-group select,
+.form-group datalist {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: var(--sans);
+  color: var(--text);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.form-group input:focus,
+.form-group select:focus {
+  border-color: var(--blue);
+  box-shadow: var(--shadow-focus);
+}
+.form-actions { padding-top: 12px; border-top: 1px solid var(--border); }
+
+/* SEARCH / FILTERS ---------------------------------------- */
+.search-wrap input {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  padding: 9px 12px 9px 36px;
+}
+.search-wrap input:focus { border-color: var(--blue); box-shadow: var(--shadow-focus); outline: none; }
+.search-icon { color: var(--text3); }
+.filter-select {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+.filter-select:focus { border-color: var(--blue); box-shadow: var(--shadow-focus); outline: none; }
+
+/* PAGINATION ---------------------------------------------- */
+.pagination { padding: 12px 18px; border-top: 1px solid var(--border); color: var(--text2); }
+.page-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+}
+.page-btn:hover, .page-btn.active {
+  background: var(--blue); color: #fff; border-color: var(--blue);
+  box-shadow: 0 1px 2px rgba(80,69,229,0.18);
+}
+
+/* ALERTS -------------------------------------------------- */
+.alert { padding: 11px 14px; border-radius: var(--radius2); font-size: 13px; }
+.alert-info    { background: var(--blue-soft);  border: 1px solid oklch(0.88 0.04 282); color: var(--blue-ink); }
+.alert-success { background: var(--green-soft); border: 1px solid oklch(0.85 0.07 158); color: var(--green); }
+.alert-warn    { background: var(--gold-soft);  border: 1px solid oklch(0.85 0.07 80);  color: oklch(0.42 0.13 70); }
+
+/* EXPORT CARDS -------------------------------------------- */
+.export-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+.export-card h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.export-card p { font-size: 12.5px; color: var(--text2); line-height: 1.55; }
+
+/* MODAL --------------------------------------------------- */
+.modal-overlay { background: rgba(18,21,35,0.45); backdrop-filter: blur(2px); }
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(18,21,35,0.18), 0 0 0 1px rgba(18,21,35,0.04);
+}
+.modal h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.modal p { font-size: 13px; }
+
+/* TOAST --------------------------------------------------- */
+#toast.success { background: var(--green); color: #fff; border: none; box-shadow: 0 8px 24px rgba(34,131,80,0.30); }
+#toast.error   { background: var(--red);   color: #fff; border: none; box-shadow: 0 8px 24px rgba(220,38,38,0.30); }
+
+/* MODE TOGGLE (single/group input) ------------------------ */
+.mode-toggle {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  padding: 3px;
+}
+.mode-option { font-size: 13px; font-weight: 500; color: var(--text2); padding: 6px 14px; }
+.mode-option:has(input:checked) {
+  background: var(--card);
+  color: var(--blue);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs), 0 0 0 1px var(--border);
+}
+
+/* CHIP MULTISELECT ---------------------------------------- */
+.chip-multi {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+}
+.chip-multi-chip {
+  background: var(--blue-soft);
+  color: var(--blue-ink);
+  border: 1px solid oklch(0.88 0.04 282);
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 5px;
+}
+.chip-multi-chip button { color: var(--blue-ink); opacity: 0.6; }
+.chip-multi-chip button:hover { color: var(--blue); opacity: 1; }
+/* Chip entered via Enter for a value not present in the datalist (no matching ref-book entry).
+   Visually marked so the user understands the filter won't match anything. */
+.chip-multi-chip-foreign {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px dashed #d4a017;
+}
+.chip-multi-chip-foreign button { color: #856404; }
+
+/* REF TABLES ---------------------------------------------- */
+.ref-rename-input {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+}
+.ref-rename-input:focus { border-color: var(--blue); box-shadow: var(--shadow-focus); outline: none; }
+.ref-count.has-records { color: var(--blue); }
+.ref-qr-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: var(--radius-sm);
+}
+.ref-qr-btn:hover, .ref-qr-btn.ref-qr-active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.ref-qr-btn.ref-qr-active:hover { background: var(--blue2); }
+.ref-group-row { background: var(--card2); }
+.ref-group-icon { color: var(--blue); }
+
+/* TRAINERS PAGE ------------------------------------------- */
+.trainers-list {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.trainer-row { padding: 13px 14px; }
+.trainer-row.active {
+  background: var(--blue-soft);
+  border-left: 3px solid var(--blue);
+  padding-left: 11px;
+}
+.trainer-row.active .trainer-row-name { color: var(--blue-ink); font-weight: 600; }
+.trainer-row-count {
+  background: var(--card2);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.trainer-row.active .trainer-row-count { background: var(--card); color: var(--blue); }
+.trainer-detail {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.trainer-name { font-size: 22px; font-weight: 600; letter-spacing: -0.025em; }
+.trainer-stat { background: var(--card2); border-radius: var(--radius2); padding: 6px 12px; font-size: 12.5px; }
+.trainer-section-title {
+  font-size: 11.5px; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+/* INPUT MODE: group rows --------------------------------- */
+#groupRowsBody input {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+#groupRowsBody input:focus { border-color: var(--blue); box-shadow: var(--shadow-focus); outline: none; }
+#groupRowsBody .row-del-btn { color: var(--text3); }
+#groupRowsBody .row-del-btn:hover { color: var(--red); }
+
+/* IMPORT DROPZONE ---------------------------------------- */
+.import-dropzone {
+  border: 2px dashed var(--border2);
+  border-radius: var(--radius);
+  background: var(--card3);
+  color: var(--text2);
+}
+.import-dropzone:hover { border-color: var(--blue); background: var(--blue-soft); color: var(--blue-ink); }
+
+/* EMPTY STATE -------------------------------------------- */
+.empty-state { color: var(--text3); }
+.empty-state .empty-icon { color: var(--text3); }
+
+/* SCROLLBAR ---------------------------------------------- */
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text4); }
+
+/* Trainer row icons --------------------------------------- */
+.trainer-row-icon:hover { background: var(--card2); color: var(--blue); }
+.trainer-row-edit-input { border: 1px solid var(--blue); box-shadow: var(--shadow-focus); }
+
+/* Header file area --------------------------------------- */
+.header-file { font-family: var(--sans); font-size: 12px; }
+
+/* Spinner animation for loader icons --------------------- */
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ============================================================
+   MOBILE OVERRIDES (must be at the very end of the stylesheet
+   so they win the cascade against unmediated rules above)
+   ============================================================ */
+@media (max-width: 900px) {
+  .charts-row, .charts-row2 { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 600px) {
+  .content { padding: 14px !important; }
+  /* Nav: horizontal scroll, tabs stay one-line and reachable via swipe. */
+  .nav { overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding: 0 12px; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-tab { flex-shrink: 0; padding: 12px 12px; font-size: 12.5px; }
+  #adminGearTab { margin-left: 0 !important; }
+  /* Section header: stack title and controls vertically. */
+  .section-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .section-header > div:last-child { width: 100%; }
+  /* Dashboard: shrink KPI numbers, hide PDF export. */
+  #tab-dashboard .kpi-value { font-size: 28px; }
+  #tab-dashboard [onclick*="openPDFModal"] { display: none; }
+  /* Hide Top Courses on mobile by user request. */
+  #tab-dashboard [data-pdf-section="topCourses"] { display: none; }
+}
+
+</style>
 </head>
 <body>
 
 <!-- HEADER -->
 <div class="header">
   <div class="header-logo">
-    <div class="logo-icon">🎓</div>
-    <div>
-      <div><span style="font-weight:800">VR Обучение</span> <span class="subtitle">/ CMS система</span> <span id="envBadge"></span></div>
+    <div class="logo-icon"><i class="ti ti-school" aria-hidden="true"></i></div>
+    <div class="tool-switcher" id="toolSwitcher">
+      <button class="tool-switcher-btn" id="toolSwitcherBtn" onclick="toggleToolMenu(event)" aria-haspopup="true" aria-expanded="false">
+        <span id="toolSwitcherLabel">VR</span>
+        <i class="ti ti-chevron-down chev" aria-hidden="true"></i>
+      </button>
+      <div class="tool-menu" id="toolMenu" role="menu">
+        <div class="tool-menu-item disabled" role="menuitem">
+          <i class="ti ti-chart-pie" aria-hidden="true"></i>
+          <span>Общая сводка</span>
+          <span class="soon-badge">Скоро</span>
+        </div>
+        <div class="tool-menu-item active" role="menuitem" data-tool="vr" onclick="switchTool('vr')">
+          <i class="ti ti-headset" aria-hidden="true"></i>
+          <span>VR</span>
+          <i class="ti ti-check" aria-hidden="true"></i>
+        </div>
+        <div class="tool-menu-item" role="menuitem" data-tool="welder" onclick="switchTool('welder')">
+          <i class="ti ti-flame" aria-hidden="true"></i>
+          <span>Soldamatic</span>
+          <i class="ti ti-check" aria-hidden="true" style="visibility:hidden"></i>
+        </div>
+        <div class="tool-menu-item disabled" role="menuitem">
+          <i class="ti ti-tools" aria-hidden="true"></i>
+          <span>Прочие тренажёры</span>
+          <span class="soon-badge">Скоро</span>
+        </div>
+      </div>
     </div>
+    <span id="envBadge"></span>
   </div>
   <div class="header-file">
     <div class="file-status" id="fileStatus">
@@ -802,36 +1474,34 @@ select option { background: var(--card2); }
     </div>
   </div>
   <div class="header-actions">
-    <button class="btn btn-secondary" onclick="reloadDB()" title="Перезагрузить из облака">🔄 Обновить</button>
-    <button class="btn btn-success" id="saveBtn" onclick="saveDB()" disabled>💾 Сохранить</button>
+    <button class="btn btn-secondary" onclick="reloadDB()" title="Перезагрузить из облака"><i class="ti ti-refresh"></i> Обновить</button>
+    <button class="btn btn-success" id="saveBtn" onclick="saveDB()" disabled><i class="ti ti-device-floppy"></i> Сохранить</button>
   </div>
 </div>
 
 <!-- NAV -->
 <div class="nav">
   <div class="nav-tab active" onclick="switchTab('dashboard', this)">
-    📊 Дашборд
+    <i class="ti ti-layout-dashboard"></i> Дашборд
   </div>
   <div class="nav-tab" onclick="switchTab('input', this)">
-    ➕ Ввод данных
+    <i class="ti ti-plus"></i> Ввод данных
   </div>
   <div class="nav-tab" onclick="switchTab('journal', this)">
-    📋 Журнал <span class="tab-count" id="journalCount">0</span>
-  </div>
-  <div class="nav-tab" onclick="switchTab('export', this)">
-    📤 Экспорт / Импорт
-  </div>
-  <div class="nav-tab" onclick="switchTab('refs', this)">
-    🗂 Справочники
+    <i class="ti ti-clipboard-text"></i> Журнал <span class="tab-count" id="journalCount">0</span>
   </div>
   <div class="nav-tab" onclick="switchTab('trainers', this)">
-    👨‍🏫 Тренеры <span class="tab-count" id="trainersCount">0</span>
+    <i class="ti ti-user-circle"></i> Тренеры <span class="tab-count" id="trainersCount">0</span>
+  </div>
+  <div class="nav-tab" onclick="switchTab('qrcourses', this)">
+    <i class="ti ti-qrcode"></i> QR курсов
   </div>
   <div class="nav-tab" onclick="switchTab('trash', this)">
-    🗑 Корзина <span class="tab-count" id="trashCount">0</span>
+    <i class="ti ti-trash"></i> Корзина <span class="tab-count" id="trashCount">0</span>
   </div>
-  <div class="nav-tab" onclick="switchTab('history', this)">
-    🕐 История
+  <!-- Admin gear — pinned to the right side of the nav. Houses Refs/Export/History as sub-tabs. -->
+  <div class="nav-tab" id="adminGearTab" onclick="switchTab('admin', this)" style="margin-left:auto;padding:13px 16px" title="Админка: Справочники, Экспорт, История">
+    <i class="ti ti-settings" style="font-size:18px"></i>
   </div>
 </div>
 
@@ -840,70 +1510,56 @@ select option { background: var(--card2); }
 
   <!-- DASHBOARD TAB -->
   <div class="tab-pane active" id="tab-dashboard">
-    <div class="section-header pdf-hide" style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <label style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">Год</label>
-        <select id="dashboardYear" onchange="onDashboardYearChange(this.value)" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:7px 10px;font-size:13px;font-family:var(--sans);outline:none">
+    <div class="section-header" style="margin-bottom:20px">
+      <div class="section-title">Дашборд</div>
+      <div class="pdf-hide" style="display:flex;align-items:center;gap:10px">
+        <label style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em">Год</label>
+        <select id="dashboardYear" onchange="onDashboardYearChange(this.value)" style="background:var(--card);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:7px 12px;font-size:13px;font-family:var(--sans);outline:none">
           <!-- options populated dynamically by populateYearSelectors() -->
         </select>
+        <button class="btn btn-secondary btn-sm" onclick="openPDFModal('dashboard')"><i class="ti ti-file-text"></i> Экспорт в PDF</button>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="openPDFModal('dashboard')">📄 Экспорт в PDF</button>
     </div>
     <div id="noDataMsg" class="alert alert-info" style="display:none">
-      ℹ️ Нет данных. Откройте существующую базу или создайте новую, затем добавьте записи через «Ввод данных».
+      <i class="ti ti-info-circle" style="font-size:14px;margin-right:6px;vertical-align:-1px"></i>Нет данных. Откройте существующую базу или создайте новую, затем добавьте записи через «Ввод данных».
     </div>
-    <div class="kpi-row-top" data-pdf-section="kpi" data-pdf-label="KPI и инструкторы">
-      <div class="kpi-left-col">
-        <div class="kpi-card">
-          <div class="kpi-label">Всего обучено</div>
-          <div class="kpi-value" id="kpiTotal">0</div>
-          <div class="kpi-sub">записей в базе</div>
-        </div>
-        <div class="kpi-card green">
-          <div class="kpi-label">Текущий месяц</div>
-          <div class="kpi-value" id="kpiMonth">0</div>
-          <div class="kpi-sub" id="kpiMonthLabel">—</div>
-        </div>
+    <div class="kpi-row-3" data-pdf-section="kpi" data-pdf-label="KPI">
+      <div class="kpi-card">
+        <div class="kpi-label"><span class="kpi-ic ic-indigo"><i class="ti ti-users"></i></span>Всего обучено</div>
+        <div class="kpi-value" id="kpiTotal">0</div>
+        <div class="kpi-sub">записей в базе</div>
       </div>
-      <div class="kpi-card" style="--accent:var(--cyan)">
-        <div class="kpi-label" style="margin-bottom:12px">По инструкторам</div>
-        <div id="instructorBreakdown" style="display:flex;flex-direction:column;gap:8px">
-          <span style="color:var(--text3);font-size:12px">Нет данных</span>
-        </div>
+      <div class="kpi-card">
+        <div class="kpi-label"><span class="kpi-ic ic-green"><i class="ti ti-calendar-event"></i></span>Текущий месяц</div>
+        <div class="kpi-value" id="kpiMonth">0</div>
+        <div class="kpi-sub" id="kpiMonthLabel">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label"><span class="kpi-ic ic-amber"><i class="ti ti-target"></i></span>Средний % курса</div>
+        <div class="kpi-value"><span id="kpiAvg">0</span><span class="kpi-unit">%</span></div>
+        <div class="kpi-sub">по всем курсам за период</div>
       </div>
     </div>
     <div class="charts-row">
       <div class="chart-card" data-pdf-section="chartMonths" data-pdf-label="График по месяцам">
-        <div class="chart-title" id="chartMonthsTitle">Обучено по месяцам</div>
+        <div class="chart-title" id="chartMonthsTitle"><span class="kpi-ic ic-indigo"><i class="ti ti-chart-bar"></i></span>Обучено по месяцам</div>
         <canvas id="chartMonths"></canvas>
       </div>
       <div class="chart-card" data-pdf-section="chartEnterprises" data-pdf-label="График по предприятиям">
-        <div class="chart-title">По предприятиям</div>
-        <div style="position:relative;height:240px"><canvas id="chartEnterprises"></canvas></div>
+        <div class="chart-title"><span class="kpi-ic ic-teal"><i class="ti ti-building-factory"></i></span>По предприятиям</div>
+        <canvas id="chartEnterprises"></canvas>
       </div>
     </div>
-    <div style="margin-bottom:24px" data-pdf-section="topCourses" data-pdf-label="Топ курсы">
-      <div class="chart-card">
-        <div class="chart-title">Топ курсы</div>
+    <div class="charts-row2" style="margin-bottom:18px">
+      <div class="chart-card" data-pdf-section="topCourses" data-pdf-label="Топ курсы">
+        <div class="chart-title"><span class="kpi-ic ic-amber"><i class="ti ti-trophy"></i></span>Топ курсы</div>
         <div id="chartCourses" style="padding:4px 0"></div>
       </div>
-    </div>
-    <!-- Recent entries table on dashboard -->
-    <div class="table-wrap" data-pdf-section="recentRecords" data-pdf-label="Последние 20 записей" data-pdf-default="off">
-      <div class="table-header">
-        <span class="table-title">Последние 20 записей</span>
-      </div>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Дата</th><th>ФИО</th><th>Предприятие</th><th>Курс</th><th>% курса</th><th>Инструктор</th>
-            </tr>
-          </thead>
-          <tbody id="dashRecentBody">
-            <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет данных</td></tr>
-          </tbody>
-        </table>
+      <div class="chart-card" data-pdf-section="instructors" data-pdf-label="По инструкторам">
+        <div class="chart-title"><span class="kpi-ic ic-teal"><i class="ti ti-user-circle"></i></span>По инструкторам</div>
+        <div id="instructorBreakdown" style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+          <span style="color:var(--text3);font-size:12px">Нет данных</span>
+        </div>
       </div>
     </div>
   </div>
@@ -915,11 +1571,11 @@ select option { background: var(--card2); }
       <div class="mode-toggle">
         <label class="mode-option">
           <input type="radio" name="inputMode" value="single" checked onchange="switchInputMode('single')">
-          <span>📝 Одна запись</span>
+          <span><i class="ti ti-edit" style="vertical-align:-2px;margin-right:5px"></i>Одна запись</span>
         </label>
         <label class="mode-option">
           <input type="radio" name="inputMode" value="group" onchange="switchInputMode('group')">
-          <span>👥 Группа</span>
+          <span><i class="ti ti-users" style="vertical-align:-2px;margin-right:5px"></i>Группа</span>
         </label>
       </div>
     </div>
@@ -927,7 +1583,7 @@ select option { background: var(--card2); }
     <!-- SINGLE ENTRY FORM -->
     <div id="singleEntryForm" class="table-wrap" style="padding:20px;margin-bottom:20px">
       <div id="dupWarning" class="alert alert-warn" style="display:none">
-        ⚠️ Возможный дубликат: сотрудник с таким табельным номером уже проходил этот курс в этом месяце.
+        <i class="ti ti-alert-triangle" style="font-size:14px;margin-right:6px;vertical-align:-1px"></i>Возможный дубликат: сотрудник с таким табельным номером уже проходил этот курс в этом месяце.
       </div>
       <div class="form-grid-12">
         <!-- Row 1: Date, Enterprise, Instructor (with "Add to list" button) -->
@@ -975,15 +1631,15 @@ select option { background: var(--card2); }
         </div>
       </div>
       <div class="form-actions">
-        <button class="btn btn-primary" onclick="addRecord()">✅ Добавить запись</button>
-        <button class="btn btn-secondary" onclick="clearForm()">🗑 Очистить</button>
+        <button class="btn btn-primary" onclick="addRecord()"><i class="ti ti-check"></i> Добавить запись</button>
+        <button class="btn btn-secondary" onclick="clearForm()"><i class="ti ti-eraser"></i> Очистить</button>
       </div>
     </div>
 
     <!-- GROUP ENTRY FORM -->
     <div id="groupEntryForm" class="table-wrap" style="padding:20px;margin-bottom:20px;display:none">
       <div class="alert alert-info">
-        ℹ️ Введите общие данные сверху, добавьте участников ниже. Можно вставить таблицу из Excel (Ctrl+V) — табельный, ФИО, должность, % через табуляцию.
+        <i class="ti ti-info-circle" style="font-size:14px;margin-right:6px;vertical-align:-1px"></i>Введите общие данные сверху, добавьте участников ниже. Можно вставить таблицу из Excel (Ctrl+V) — табельный, ФИО, должность, % через табуляцию.
       </div>
 
       <div class="form-grid-12" style="margin-bottom:18px">
@@ -1024,12 +1680,12 @@ select option { background: var(--card2); }
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <button class="btn btn-secondary btn-sm" onclick="addGroupRow()">+ Добавить участника</button>
-        <button class="btn btn-secondary btn-sm" onclick="clearGroupRows()">🗑 Очистить список</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearGroupRows()"><i class="ti ti-eraser"></i> Очистить список</button>
       </div>
 
       <div class="form-actions">
-        <button class="btn btn-primary" onclick="saveGroup()">✅ Сохранить группу <span id="groupSaveCount"></span></button>
-        <button class="btn btn-secondary" onclick="clearGroupForm()">🗑 Очистить всё</button>
+        <button class="btn btn-primary" onclick="saveGroup()"><i class="ti ti-check"></i> Сохранить группу <span id="groupSaveCount"></span></button>
+        <button class="btn btn-secondary" onclick="clearGroupForm()"><i class="ti ti-eraser"></i> Очистить всё</button>
       </div>
     </div>
 
@@ -1061,19 +1717,19 @@ select option { background: var(--card2); }
     </div>
     <div class="filter-row">
       <div class="search-wrap">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon"><i class="ti ti-search"></i></span>
         <input type="text" id="searchInput" placeholder="Поиск по ФИО, табельному, курсу..." oninput="filterRecords()">
       </div>
       <!-- Date filter: single date by default, toggle to range -->
       <div id="dateFilterSingle" style="display:flex;gap:6px;align-items:center">
         <input type="date" class="filter-select" id="filterDate" onchange="filterRecords()" style="min-width:150px" title="Фильтр по дате">
-        <button class="btn btn-secondary btn-sm" onclick="toggleDateRange(true)" title="Диапазон дат">📅 Диапазон</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleDateRange(true)" title="Диапазон дат"><i class="ti ti-calendar"></i> Диапазон</button>
       </div>
       <div id="dateFilterRange" style="display:none;gap:6px;align-items:center">
         <input type="date" class="filter-select" id="filterDateFrom" onchange="filterRecords()" style="min-width:140px" title="С">
         <span style="color:var(--text3);font-size:12px">—</span>
         <input type="date" class="filter-select" id="filterDateTo" onchange="filterRecords()" style="min-width:140px" title="По">
-        <button class="btn btn-secondary btn-sm" onclick="toggleDateRange(false)" title="Одна дата">✕</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleDateRange(false)" title="Одна дата"><i class="ti ti-x"></i></button>
       </div>
       <select class="filter-select" id="filterYear" onchange="filterRecords()" style="min-width:110px">
         <option value="">Все годы</option>
@@ -1091,7 +1747,7 @@ select option { background: var(--card2); }
       <select class="filter-select" id="filterInstructor" onchange="filterRecords()">
         <option value="">Все инструкторы</option>
       </select>
-      <button class="btn btn-secondary btn-sm" onclick="resetFilters()">✕ Сбросить</button>
+      <button class="btn btn-secondary btn-sm" onclick="resetFilters()"><i class="ti ti-x"></i> Сбросить</button>
     </div>
     <div class="table-wrap">
       <div class="table-scroll">
@@ -1120,12 +1776,109 @@ select option { background: var(--card2); }
       </div>
     </div>
     <div style="margin-top:12px;display:flex;gap:8px" id="bulkActions" style="display:none">
-      <button class="btn btn-danger btn-sm" onclick="deleteSelected()">🗑 Удалить выбранные</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteSelected()"><i class="ti ti-trash"></i> Удалить выбранные</button>
     </div>
   </div>
 
-  <!-- REFS TAB -->
+  <!-- TRAINERS TAB -->
+  <div class="tab-pane" id="tab-trainers">
+    <div class="section-header">
+      <div class="section-title">Тренеры</div>
+    </div>
+    <div class="trainers-layout">
+      <div class="trainers-list" id="trainersList">
+        <!-- list of trainer rows, populated by renderTrainersList() -->
+      </div>
+      <div class="trainer-detail" id="trainerDetail">
+        <div class="empty-state" style="padding:80px 20px">
+          <div class="empty-icon"><i class="ti ti-arrow-left"></i></div>
+          <strong>Выберите тренера</strong>
+          <p>Кликните на имя в списке слева, чтобы увидеть карточку</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR COURSES TAB — read-only view of QR codes for trainers' daily use.
+       Editing the URL behind a QR remains in the "Справочники" tab. -->
+  <div class="tab-pane" id="tab-qrcourses">
+    <div class="section-header">
+      <div class="section-title">QR курсов</div>
+      <div style="font-size:12px;color:var(--text2)">Клик на курс — выбрать, клик на превью — открыть на весь экран</div>
+    </div>
+    <div class="trainers-layout" style="grid-template-columns: 360px 1fr; height: calc(100vh - 200px)">
+      <div class="trainers-list" id="qrCoursesList" style="max-height: 100%; height: 100%;">
+        <div style="padding:8px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--card);z-index:1">
+          <input type="text" id="qrCourseSearch" placeholder="Поиск курса…" oninput="renderQRCoursesList()" style="width:100%;padding:6px 10px;font-size:13px;border:1px solid var(--border);border-radius:4px">
+        </div>
+        <div id="qrCoursesListBody"><!-- rows populated by renderQRCoursesList() --></div>
+      </div>
+      <div class="trainer-detail" id="qrCourseDetail" style="height: 100%; overflow: auto;">
+        <div class="empty-state" style="padding:80px 20px">
+          <div class="empty-icon"><i class="ti ti-arrow-left"></i></div>
+          <strong>Выберите курс</strong>
+          <p>Кликните на название в списке слева, чтобы увидеть QR-код</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR FULLSCREEN OVERLAY — opens via clicking the preview QR.
+       The image inside gets max-width:100% via CSS in openQRFullscreen so it scales down on small screens. -->
+  <div class="modal-overlay" id="qrFullscreenOverlay" onclick="closeQRFullscreen(event)" style="background:rgba(0,0,0,0.75)">
+    <div id="qrFullscreenInner" style="background:#fff;border-radius:12px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:16px;max-width:min(90vw, 700px);max-height:90vh;box-sizing:border-box;overflow:auto" onclick="event.stopPropagation()">
+      <div id="qrFullscreenTitle" style="font-size:22px;font-weight:600;color:#000;text-align:center;flex-shrink:0"></div>
+      <div id="qrFullscreenCanvas" style="flex-shrink:0;display:block"></div>
+      <div id="qrFullscreenUrl" style="font-family:var(--mono);font-size:12px;color:#888;flex-shrink:0;word-break:break-all;text-align:center"></div>
+      <div style="font-size:12px;color:#999;flex-shrink:0">Esc или клик вне — закрыть</div>
+    </div>
+  </div>
+
+  <!-- TRASH TAB -->
+  <div class="tab-pane" id="tab-trash">
+    <div class="section-header">
+      <div class="section-title">Корзина</div>
+      <div style="font-size:12px;color:var(--text2)">Удалённые записи хранятся 30 дней, затем удаляются навсегда автоматически</div>
+    </div>
+    <div class="filter-row">
+      <div class="search-wrap">
+        <span class="search-icon"><i class="ti ti-search"></i></span>
+        <input type="text" id="trashSearch" placeholder="Поиск по ФИО, табельному, курсу..." oninput="renderTrash()">
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="restoreAllTrash()"><i class="ti ti-arrow-back-up"></i> Восстановить всё</button>
+      <button class="btn btn-danger btn-sm" onclick="emptyTrash()"><i class="ti ti-trash"></i> Очистить корзину</button>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Удалено</th>
+              <th>Дата</th>
+              <th>Предприятие</th>
+              <th>Таб. №</th>
+              <th>ФИО</th>
+              <th>Курс</th>
+              <th>%</th>
+              <th>Осталось дней</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="trashBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- REFS / EXPORT / HISTORY — three panes accessible via the gear icon's sub-nav.
+       Each pane carries its own copy of the admin sub-nav at the top so only one
+       .tab-pane.active exists at any time (the sub-nav is not in a separate pane). -->
   <div class="tab-pane" id="tab-refs">
+    <div class="admin-sub-nav">
+      <div class="admin-sub-tab" data-admin="refs" onclick="setAdminSubTab('refs', this)"><i class="ti ti-folders"></i> Справочники</div>
+      <div class="admin-sub-tab" data-admin="export" onclick="setAdminSubTab('export', this)"><i class="ti ti-arrow-bar-to-down"></i> Экспорт / Импорт</div>
+      <div class="admin-sub-tab" data-admin="history" onclick="setAdminSubTab('history', this)"><i class="ti ti-history"></i> История</div>
+    </div>
     <div class="section-header">
       <div class="section-title">Справочники</div>
       <div style="font-size:12px;color:var(--text2)">Изменения сразу применяются ко всем записям в базе</div>
@@ -1136,7 +1889,7 @@ select option { background: var(--card2); }
       <div class="table-header" style="justify-content:space-between">
         <span class="table-title">Курсы обучения</span>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-secondary btn-sm" onclick="openGroupModal()">📁 Создать группу</button>
+          <button class="btn btn-secondary btn-sm" onclick="openGroupModal()"><i class="ti ti-folder-plus"></i> Создать группу</button>
           <input type="text" id="newCourseName" placeholder="Название нового курса" style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius2);color:var(--text);padding:6px 10px;font-size:13px;font-family:var(--sans);outline:none;width:280px">
           <button class="btn btn-primary btn-sm" onclick="addRefCourse()">+ Добавить</button>
         </div>
@@ -1181,70 +1934,20 @@ select option { background: var(--card2); }
     </div>
   </div>
 
-  <!-- TRAINERS TAB -->
-  <div class="tab-pane" id="tab-trainers">
-    <div class="section-header">
-      <div class="section-title">Тренеры</div>
-    </div>
-    <div class="trainers-layout">
-      <div class="trainers-list" id="trainersList">
-        <!-- list of trainer rows, populated by renderTrainersList() -->
-      </div>
-      <div class="trainer-detail" id="trainerDetail">
-        <div class="empty-state" style="padding:80px 20px">
-          <div class="empty-icon">👈</div>
-          <strong>Выберите тренера</strong>
-          <p>Кликните на имя в списке слева, чтобы увидеть карточку</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- TRASH TAB -->
-  <div class="tab-pane" id="tab-trash">
-    <div class="section-header">
-      <div class="section-title">Корзина</div>
-      <div style="font-size:12px;color:var(--text2)">Удалённые записи хранятся 30 дней, затем удаляются навсегда автоматически</div>
-    </div>
-    <div class="filter-row">
-      <div class="search-wrap">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="trashSearch" placeholder="Поиск по ФИО, табельному, курсу..." oninput="renderTrash()">
-      </div>
-      <button class="btn btn-secondary btn-sm" onclick="restoreAllTrash()">↩ Восстановить всё</button>
-      <button class="btn btn-danger btn-sm" onclick="emptyTrash()">🗑 Очистить корзину</button>
-    </div>
-    <div class="table-wrap">
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Удалено</th>
-              <th>Дата</th>
-              <th>Предприятие</th>
-              <th>Таб. №</th>
-              <th>ФИО</th>
-              <th>Курс</th>
-              <th>%</th>
-              <th>Осталось дней</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="trashBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
   <!-- HISTORY TAB -->
   <div class="tab-pane" id="tab-history">
+    <div class="admin-sub-nav">
+      <div class="admin-sub-tab" data-admin="refs" onclick="setAdminSubTab('refs', this)"><i class="ti ti-folders"></i> Справочники</div>
+      <div class="admin-sub-tab" data-admin="export" onclick="setAdminSubTab('export', this)"><i class="ti ti-arrow-bar-to-down"></i> Экспорт / Импорт</div>
+      <div class="admin-sub-tab" data-admin="history" onclick="setAdminSubTab('history', this)"><i class="ti ti-history"></i> История</div>
+    </div>
     <div class="section-header">
       <div class="section-title">История изменений</div>
       <div style="font-size:12px;color:var(--text2)">Записи старше 30 дней удаляются автоматически</div>
     </div>
     <div class="filter-row">
       <div class="search-wrap">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon"><i class="ti ti-search"></i></span>
         <input type="text" id="historySearch" placeholder="Поиск по тексту события..." oninput="renderHistory()">
       </div>
       <select class="filter-select" id="historyFilterAction" onchange="renderHistory()">
@@ -1256,7 +1959,7 @@ select option { background: var(--card2); }
         <option value="rename">Переименования</option>
         <option value="import">Импорты</option>
       </select>
-      <button class="btn btn-secondary btn-sm" onclick="loadHistory()">🔄 Обновить</button>
+      <button class="btn btn-secondary btn-sm" onclick="loadHistory()"><i class="ti ti-refresh"></i> Обновить</button>
     </div>
     <div class="table-wrap">
       <div class="table-scroll">
@@ -1278,30 +1981,35 @@ select option { background: var(--card2); }
 
   <!-- EXPORT TAB -->
   <div class="tab-pane" id="tab-export">
+    <div class="admin-sub-nav">
+      <div class="admin-sub-tab" data-admin="refs" onclick="setAdminSubTab('refs', this)"><i class="ti ti-folders"></i> Справочники</div>
+      <div class="admin-sub-tab" data-admin="export" onclick="setAdminSubTab('export', this)"><i class="ti ti-arrow-bar-to-down"></i> Экспорт / Импорт</div>
+      <div class="admin-sub-tab" data-admin="history" onclick="setAdminSubTab('history', this)"><i class="ti ti-history"></i> История</div>
+    </div>
     <div class="section-header">
       <div class="section-title">Экспорт и Импорт данных</div>
     </div>
     <div class="export-grid">
       <div class="export-card">
-        <div class="export-icon">📊</div>
+        <div class="export-icon"><i class="ti ti-file-spreadsheet"></i></div>
         <h3>Экспорт в Excel (.xlsx)</h3>
         <p>Экспортирует все записи в формате Excel — как оригинальный «Обученные VR по площадкам», с листами по месяцам.</p>
         <button class="btn btn-primary" onclick="exportExcelFull()">⬇ Скачать Excel</button>
       </div>
       <div class="export-card">
-        <div class="export-icon">📋</div>
+        <div class="export-icon"><i class="ti ti-clipboard-data"></i></div>
         <h3>Сводка «Факт обучения»</h3>
         <p>Сводная таблица по предприятиям × курсам × месяцам — формат третьего документа «Факт обучения VR».</p>
         <button class="btn btn-primary" onclick="exportSummaryExcel()">⬇ Сводка Excel</button>
       </div>
       <div class="export-card">
-        <div class="export-icon">💾</div>
+        <div class="export-icon"><i class="ti ti-database-export"></i></div>
         <h3>Резервная копия (JSON)</h3>
         <p>Сохраняет всю базу данных в JSON-файл. Используйте для резервного копирования или переноса данных между компьютерами.</p>
         <button class="btn btn-secondary" onclick="exportJSON()">⬇ Скачать JSON</button>
       </div>
       <div class="export-card">
-        <div class="export-icon">📂</div>
+        <div class="export-icon"><i class="ti ti-folder-open"></i></div>
         <h3>Импорт из JSON</h3>
         <p>Загрузите ранее сохранённый JSON-файл. Данные будут <strong>добавлены</strong> к текущим (дубликаты исключаются по ID).</p>
         <label class="btn btn-secondary" style="cursor:pointer">
@@ -1310,7 +2018,7 @@ select option { background: var(--card2); }
         </label>
       </div>
       <div class="export-card">
-        <div class="export-icon">📑</div>
+        <div class="export-icon"><i class="ti ti-table-import"></i></div>
         <h3>Импорт из Excel</h3>
         <p>Загрузите Excel-файл в формате «Результаты обучения» (первый документ). Данные будут добавлены к текущей базе.</p>
         <label class="btn btn-secondary" style="cursor:pointer">
@@ -1319,21 +2027,21 @@ select option { background: var(--card2); }
         </label>
       </div>
       <div class="export-card">
-        <div class="export-icon">🗑</div>
-        <h3>Очистить базу</h3>
-        <p>Удаляет <strong>все записи</strong> из текущей базы данных. Перед очисткой автоматически создаётся бэкап в облаке.</p>
+        <div class="export-icon"><i class="ti ti-trash"></i></div>
+        <h3>Очистить журнал</h3>
+        <p>Удаляет <strong>все записи обучения</strong> из журнала. Справочники, тренеры, QR-коды и группы курсов сохраняются. Перед очисткой автоматически создаётся бэкап в облаке.</p>
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:10px;cursor:pointer">
           <input type="checkbox" id="dangerToggle" onchange="document.getElementById('dangerClearBtn').style.display = this.checked ? 'inline-flex' : 'none'">
           Показать опасные действия
         </label>
-        <button class="btn btn-danger" id="dangerClearBtn" onclick="openClearDBModal()" style="display:none">⚠ Очистить всё</button>
+        <button class="btn btn-danger" id="dangerClearBtn" onclick="openClearDBModal()" style="display:none"><i class="ti ti-alert-triangle"></i> Очистить журнал</button>
       </div>
     </div>
 
     <!-- Backups list -->
     <div class="table-wrap" style="margin-top:20px">
       <div class="table-header" style="justify-content:space-between">
-        <span class="table-title">💾 Бэкапы базы данных</span>
+        <span class="table-title"><i class="ti ti-database" style="vertical-align:-1px;margin-right:6px"></i>Бэкапы базы данных</span>
         <button class="btn btn-secondary btn-sm" onclick="manualBackupAndRefresh()">+ Создать бэкап вручную</button>
       </div>
       <div style="padding:12px 16px;font-size:12px;color:var(--text3);border-bottom:1px solid var(--border)">
@@ -1357,12 +2065,12 @@ select option { background: var(--card2); }
     <div style="margin-top:20px;display:none" class="table-wrap" id="importPreview">
       <div class="table-header" style="justify-content:space-between">
         <span class="table-title" id="importPreviewTitle">Результат импорта</span>
-        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('importPreview').style.display='none'">✕ Закрыть</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('importPreview').style.display='none'"><i class="ti ti-x"></i> Закрыть</button>
       </div>
       <div style="padding:16px">
         <div id="importProgressBar" style="display:none;margin-bottom:14px">
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px" id="importProgressLabel">Читаем файл…</div>
-          <div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden">
+          <div style="height:6px;background:var(--card2);border-radius:3px;overflow:hidden">
             <div id="importProgressFill" style="height:100%;background:var(--blue);border-radius:3px;width:0%;transition:width 0.4s"></div>
           </div>
         </div>
@@ -1387,7 +2095,7 @@ select option { background: var(--card2); }
 <!-- PDF SETTINGS MODAL -->
 <div class="modal-overlay" id="pdfModalOverlay">
   <div class="modal" style="width:540px">
-    <h2>📄 Экспорт в PDF</h2>
+    <h2><i class="ti ti-file-text" style="vertical-align:-2px;margin-right:6px"></i>Экспорт в PDF</h2>
     <p style="margin-bottom:14px">Выберите содержимое для экспорта. Откроется диалог печати браузера в альбомной ориентации — выберите <strong>«Сохранить как PDF»</strong> в качестве принтера.</p>
 
     <div class="form-group">
@@ -1397,7 +2105,7 @@ select option { background: var(--card2); }
 
     <div class="modal-actions" style="margin-top:22px">
       <button class="btn btn-secondary" onclick="closePDFModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="confirmPDFExport()">🖨 Открыть печать</button>
+      <button class="btn btn-primary" onclick="confirmPDFExport()"><i class="ti ti-printer"></i> Открыть печать</button>
     </div>
   </div>
 </div>
@@ -1416,9 +2124,9 @@ select option { background: var(--card2); }
       <div style="margin-top:12px;padding:8px 10px;background:var(--card2);border-radius:var(--radius2);font-size:11px;font-family:var(--mono);color:var(--text2);word-break:break-all" id="qrModalUrlDisplay"></div>
       <div class="modal-actions" style="margin-top:18px;flex-wrap:wrap;gap:8px">
         <button class="btn btn-secondary" onclick="closeQRModal()">Закрыть</button>
-        <button class="btn btn-secondary" onclick="printQR()">🖨 Печать</button>
-        <button class="btn btn-secondary" onclick="qrModalEnterEdit()">✏ Редактировать</button>
-        <button class="btn btn-danger" onclick="qrModalDelete()">🗑 Удалить</button>
+        <button class="btn btn-secondary" onclick="printQR()"><i class="ti ti-printer"></i> Печать</button>
+        <button class="btn btn-secondary" onclick="qrModalEnterEdit()"><i class="ti ti-pencil"></i> Редактировать</button>
+        <button class="btn btn-danger" onclick="qrModalDelete()"><i class="ti ti-trash"></i> Удалить</button>
       </div>
     </div>
 
@@ -1456,7 +2164,7 @@ select option { background: var(--card2); }
 
     <div class="modal-actions" style="margin-top:18px">
       <button class="btn btn-secondary" onclick="closeGroupModal()">Отмена</button>
-      <button class="btn btn-danger" id="groupModalDeleteBtn" onclick="groupModalDelete()" style="display:none">🗑 Удалить группу</button>
+      <button class="btn btn-danger" id="groupModalDeleteBtn" onclick="groupModalDelete()" style="display:none"><i class="ti ti-trash"></i> Удалить группу</button>
       <button class="btn btn-primary" onclick="groupModalSave()">Сохранить</button>
     </div>
   </div>
@@ -1465,11 +2173,11 @@ select option { background: var(--card2); }
 <!-- CLEAR DB MODAL — three-layer protection: toggle + auto-backup + typed phrase -->
 <div class="modal-overlay" id="clearDBModalOverlay">
   <div class="modal" style="width:520px">
-    <h2 style="color:var(--red)">⚠ Очистить базу данных?</h2>
-    <p style="margin-bottom:14px">Будут удалены <strong id="clearDBCount">все</strong> записей из базы. Это действие отображается во всех отчётах.</p>
+    <h2 style="color:var(--red)"><i class="ti ti-alert-triangle" style="vertical-align:-2px;margin-right:6px"></i>Очистить журнал?</h2>
+    <p style="margin-bottom:14px">Будут удалены <strong id="clearDBCount">все</strong> записей обучения. Справочники, тренеры, QR-коды и группы курсов сохранятся.</p>
 
     <div id="clearDBBackupStatus" style="padding:10px 12px;background:var(--card2);border-radius:var(--radius2);font-size:13px;margin-bottom:14px;display:flex;align-items:center;gap:8px">
-      <span id="clearDBBackupSpinner">⏳</span>
+      <span id="clearDBBackupSpinner"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i></span>
       <span id="clearDBBackupMsg">Создаём бэкап в облаке…</span>
     </div>
 
@@ -1534,6 +2242,19 @@ const DB_ROW_ID = 1; // ID единственной строки в таблиц
 const AUTH_SALT = 'vr-cms-erg-2026';
 
 // ============================================================
+// MULTI-CMS (v57): tool switcher in header.
+// Each tool has its own db_state row, its own course/instructor refs, its own backups.
+// Enterprises are shared: always read from db_state.id=1 (VR row).
+// Records live in one table with tool_type column.
+// ============================================================
+const TOOL_TYPES = {
+  vr:     { dbStateId: 1, label: 'VR обучение', short: 'VR' },
+  welder: { dbStateId: 2, label: 'Soldamatic',  short: 'Soldamatic' }
+};
+let currentTool = 'vr';
+function currentDbStateId() { return TOOL_TYPES[currentTool].dbStateId; }
+
+// ============================================================
 // STATE
 // ============================================================
 let db = { version: '1.0', lastModified: null, records: [] };
@@ -1544,6 +2265,16 @@ let autosaveTimer = null;    // debounce timer for autosave
 let pollTimer = null;        // background poll timer
 const AUTOSAVE_DELAY = 3000; // ms — wait this long after last change before autosaving
 const POLL_INTERVAL = 30000; // ms — how often to check cloud for updates from others
+// Serialize reference rename operations (renameCourse / renameEnterprise / renameInstructor).
+// Without this, rapid consecutive renames race: each function is async and awaits a network
+// PATCH; they interleave, can mutate db.customCourses / db.records in the wrong order, leak
+// intermediate values into the refs list, and get autosaved as garbage entries.
+let _renameQueue = Promise.resolve();
+function _enqueueRename(fn) {
+  const next = _renameQueue.then(fn, fn); // run regardless of previous failure
+  _renameQueue = next.catch(() => {}); // swallow rejection on the queue itself, propagate to caller
+  return next;
+}
 let filteredRecords = [];
 let currentPage = 1;
 const PAGE_SIZE = 30;
@@ -1554,6 +2285,18 @@ let sortDir = 'desc';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+// Источник истины для месяца — поле `date`. Поле `r.month` исторически заполнялось из Excel,
+// в нём может быть мусор ("Пятница"), разный регистр ("март"/"Март"), лишние пробелы.
+// Все места отображения/фильтрации/группировки используют этот хелпер вместо r.month напрямую.
+// Если r.date пустой или битый — возвращает '' (запись не попадёт в фильтр по месяцу).
+function monthFromDate(r) {
+  if (!r || !r.date) return '';
+  const d = new Date(r.date);
+  const m = d.getMonth();
+  if (isNaN(m)) return '';
+  return MONTHS[m];
+}
 
 // Year filtering for dashboard and journal.
 // Records are tagged with `month: "Март"` only — no year. Year must be derived from
@@ -1658,7 +2401,8 @@ function recordToDB(rec) {
     instructor: rec.instructor || null,
     created_at: rec.createdAt || null,
     deleted: !!rec.deleted,
-    deleted_at: rec.deletedAt || null
+    deleted_at: rec.deletedAt || null,
+    tool_type: rec.toolType || currentTool
   };
 }
 
@@ -1679,7 +2423,8 @@ function recordFromDB(row) {
     instructor: row.instructor || '',
     createdAt: row.created_at || '',
     deleted: !!row.deleted,
-    deletedAt: row.deleted_at || null
+    deletedAt: row.deleted_at || null,
+    toolType: row.tool_type || 'vr'
   };
 }
 
@@ -1692,7 +2437,7 @@ async function fetchAllRecords() {
   for (let page = 0; page < 50; page++) {
     const to = from + RECORDS_PAGE_SIZE - 1;
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc`,
+      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc&tool_type=eq.${currentTool}`,
       { headers: { ...SB_HEADERS, 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
     );
     if (!res.ok) throw new Error('fetchAllRecords HTTP ' + res.status);
@@ -1779,9 +2524,12 @@ async function deleteRecordsBatch(ids) {
 // Bulk update all records where a column equals a given value.
 // Used by renameCourse/renameEnterprise to propagate the new name through every record.
 // Both `column` and `oldValue` are encoded for the URL filter; `newValue` goes in the body.
-async function updateRecordsByField(column, oldValue, newValue) {
+// `scoped` (default true) restricts PATCH to the current tool. Enterprises are shared
+// across tools, so renameEnterprise calls this with scoped=false.
+async function updateRecordsByField(column, oldValue, newValue, { scoped = true } = {}) {
+  const toolFilter = scoped ? `&tool_type=eq.${currentTool}` : '';
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/records?${column}=eq.${encodeURIComponent(oldValue)}`,
+    `${SUPABASE_URL}/rest/v1/records?${column}=eq.${encodeURIComponent(oldValue)}${toolFilter}`,
     {
       method: 'PATCH',
       headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
@@ -1793,6 +2541,36 @@ async function updateRecordsByField(column, oldValue, newValue) {
 
 // Deep clone via JSON. Used to snapshot db state.
 function cloneDB(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+// Normalize a free-text entity name for storage: trim ends, collapse internal whitespace
+// to single spaces. Doesn't lowercase — display case is preserved. Used at every entry
+// point where a name is added to db.records, db.customCourses, db.customEnterprises, or
+// db.instructors. Without this, " Стропальщик" and "Стропальщик " accumulate as separate
+// entries in ref books and pollute autocomplete/filters.
+function normName(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/\s+/g, ' ').trim();
+}
+
+// Key for case-insensitive duplicate detection. Used inside addRefCourse/Enterprise/Instructor
+// and in the one-time normalization migration. Whitespace already collapsed by normName.
+function normKey(s) {
+  return normName(s).toLowerCase();
+}
+
+// Dedupe an array of names by normKey, preserving first occurrence's display form.
+// Returns a new array.
+function dedupByNormKey(arr) {
+  const seen = new Set();
+  const out = [];
+  (arr || []).forEach(v => {
+    const norm = normName(v);
+    if (!norm) return;
+    const key = norm.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); out.push(norm); }
+  });
+  return out;
+}
 
 // Keep baseSnapshot.records in sync with db.records after a successful cloud sync.
 // Records now sync directly to the records table without going through saveDB/markDirty.
@@ -1822,6 +2600,10 @@ function isInstructorHidden(name) {
 // If `newName` is empty string, the field is set to null (effectively un-attributes records).
 // Caller is responsible for awaiting and handling errors.
 async function renameInstructor(oldName, newName) {
+  return _enqueueRename(() => _renameInstructorImpl(oldName, newName));
+}
+
+async function _renameInstructorImpl(oldName, newName) {
   newName = (newName || '').trim();
   if (newName === oldName) return;
   // Note: PATCHing instructor to '' results in empty string, not null. We use null
@@ -1856,13 +2638,22 @@ function activeRecords() {
 
 // Fetch latest db from cloud. Returns parsed db object or null on error.
 async function fetchCloudDB() {
-  // Two parallel requests: db_state (refs/groups/QRs/flags) + records table.
-  // After migration, db_state.data.records is empty; the real records live in the
-  // dedicated `records` table. fetchAllRecords handles pagination automatically.
-  const [stateRes, records] = await Promise.all([
-    fetch(`${SUPABASE_URL}/rest/v1/db_state?id=eq.${DB_ROW_ID}&select=data`, { headers: SB_HEADERS }),
+  // Two parallel requests: db_state (refs/groups/QRs/flags) + records table (filtered by tool_type).
+  // For non-VR tools we ALSO fetch the VR row to read shared customEnterprises.
+  const toolId = currentDbStateId();
+  const fetches = [
+    fetch(`${SUPABASE_URL}/rest/v1/db_state?id=eq.${toolId}&select=data`, { headers: SB_HEADERS }),
     fetchAllRecords()
-  ]);
+  ];
+  if (currentTool !== 'vr') {
+    fetches.push(
+      fetch(`${SUPABASE_URL}/rest/v1/db_state?id=eq.1&select=data`, { headers: SB_HEADERS })
+    );
+  }
+  const results = await Promise.all(fetches);
+  const stateRes = results[0];
+  const records  = results[1];
+  const vrRes    = results[2]; // undefined when currentTool === 'vr'
   if (!stateRes.ok) throw new Error('HTTP ' + stateRes.status + ' ' + stateRes.statusText);
   const rows = await stateRes.json();
   let data;
@@ -1882,12 +2673,18 @@ async function fetchCloudDB() {
   } else if (!data.records) {
     data.records = [];
   }
+  // Shared customEnterprises: for non-VR tools, override with VR's value.
+  if (vrRes && vrRes.ok) {
+    const vrRows = await vrRes.json();
+    const vrData = vrRows[0]?.data || {};
+    data.customEnterprises = Array.isArray(vrData.customEnterprises) ? vrData.customEnterprises : [];
+  }
   return data;
 }
 
 // Load DB state from Supabase. Called on page load and on manual refresh.
 async function loadDB() {
-  setFileStatus('yellow', '⏳ Загрузка из облака…');
+  setFileStatus('yellow', 'Загрузка из облака…');
   try {
     db = await fetchCloudDB();
 
@@ -1902,7 +2699,7 @@ async function loadDB() {
     const tableHasRecords = db.records.length > 0 && legacyCount === 0;
     if (!db.recordsMigrated && legacyCount > 0 && !tableHasRecords) {
       try {
-        setFileStatus('yellow', '⏳ Миграция записей в таблицу…');
+        setFileStatus('yellow', 'Миграция записей в таблицу…');
         await insertRecordsBatch(db.records);
         migratedRecords = db.records.length;
         db.recordsMigrated = true;
@@ -1912,7 +2709,7 @@ async function loadDB() {
         console.error('Records migration failed:', mErr);
         toast('Ошибка миграции записей: ' + mErr.message, 'error');
         // Don't continue load — leave the user in a known state where db has old records
-        setFileStatus('red', '❌ Миграция не выполнена');
+        setFileStatus('red', 'Миграция не выполнена');
         return false;
       }
     } else if (!db.recordsMigrated && tableHasRecords) {
@@ -1938,15 +2735,36 @@ async function loadDB() {
       db.refsBackfilled = true;
       backfillFlagJustSet = true;
     }
+    // One-time normalization migration (v60+). Collapses case/whitespace duplicates that
+    // accumulated before normName/dedupByNormKey were enforced at every entry point.
+    // Touches cloud (PATCHes records) so we set the flag eagerly to make it idempotent
+    // even if a later step fails — re-running on subsequent loads would create empty
+    // backups for no reason.
+    let normalizedCount = 0;
+    let normalizeFlagJustSet = false;
+    if (!db.refsNormalized) {
+      try {
+        normalizedCount = await migrateNormalizeRefs();
+      } catch (e) {
+        console.error('Normalize migration failed:', e);
+        toast('Ошибка нормализации справочников: ' + e.message, 'error');
+      }
+      db.refsNormalized = true;
+      normalizeFlagJustSet = true;
+    }
     baseSnapshot = cloneDB(db);
     isDirty = false;
-    setFileStatus('green', '☁ Сохранено');
+    setFileStatus('green', 'Сохранено');
     document.getElementById('saveBtn').disabled = true;
     refreshAll();
     // If we changed anything during load, persist it back silently
-    if (purged > 0 || backfilled > 0 || backfillFlagJustSet || migratedRecords > 0 || migrationFlagJustSet) {
+    if (purged > 0 || backfilled > 0 || backfillFlagJustSet || migratedRecords > 0 || migrationFlagJustSet || normalizedCount > 0 || normalizeFlagJustSet) {
       if (purged > 0) console.log(`Auto-purged ${purged} old trashed records`);
       if (backfilled > 0) console.log(`Backfilled ${backfilled} entries into ref books`);
+      if (normalizedCount > 0) {
+        console.log(`Normalized ${normalizedCount} duplicate ref entries`);
+        toast(`Справочники: схлопнуто дублей: ${normalizedCount}`, 'success');
+      }
       if (migratedRecords > 0) toast(`Миграция: ${migratedRecords} записей перенесено в новую таблицу`, 'success');
       isDirty = true;
       document.getElementById('saveBtn').disabled = false;
@@ -1955,7 +2773,7 @@ async function loadDB() {
     return true;
   } catch(e) {
     console.error('loadDB error:', e);
-    setFileStatus('red', '❌ Облако недоступно');
+    setFileStatus('red', 'Облако недоступно');
     toast('Ошибка загрузки: ' + e.message, 'error');
     document.getElementById('saveBtn').disabled = true;
     return false;
@@ -1973,31 +2791,151 @@ function backfillRefBooksFromRecords() {
   const recs = db.records || [];
   let added = 0;
 
-  const courses = new Set(db.customCourses);
-  const ents    = new Set(db.customEnterprises);
-  const instrs  = new Set(db.instructors);
+  // Dedup by normalized key (collapsed whitespace + lowercase). Without this, records
+  // with " Стропальщик" added themselves alongside an existing "Стропальщик" in the
+  // ref book — exactly the source of the "ghost duplicates" §3.4 of the v58 review
+  // couldn't find a root cause for.
+  const courses = new Set(db.customCourses.map(normKey));
+  const ents    = new Set(db.customEnterprises.map(normKey));
+  const instrs  = new Set(db.instructors.map(normKey));
 
   recs.forEach(r => {
-    if (r.course && !courses.has(r.course)) {
-      db.customCourses.push(r.course); courses.add(r.course); added++;
+    const c = normName(r.course);
+    const e = normName(r.enterprise);
+    const i = normName(r.instructor);
+    if (c && !courses.has(c.toLowerCase())) {
+      db.customCourses.push(c); courses.add(c.toLowerCase()); added++;
     }
-    if (r.enterprise && !ents.has(r.enterprise)) {
-      db.customEnterprises.push(r.enterprise); ents.add(r.enterprise); added++;
+    if (e && !ents.has(e.toLowerCase())) {
+      db.customEnterprises.push(e); ents.add(e.toLowerCase()); added++;
     }
-    if (r.instructor && !instrs.has(r.instructor)) {
-      db.instructors.push(r.instructor); instrs.add(r.instructor); added++;
+    if (i && !instrs.has(i.toLowerCase())) {
+      db.instructors.push(i); instrs.add(i.toLowerCase()); added++;
     }
   });
   return added;
+}
+
+// One-time migration: collapse case/whitespace duplicates that accumulated before
+// normalization was enforced at every entry point (v60+).
+//
+// Walks customCourses / customEnterprises / instructors. For each group of entries
+// that share normKey() (e.g. "Стропальщик", " Стропальщик", "стропальщик"), picks
+// the longest/first-seen as canonical and PATCHes records.course / records.enterprise
+// / records.instructor in the cloud to the canonical name. Local db.records is
+// updated in sync.
+//
+// Enterprise rename PATCHes are unscoped (shared across tools) — same as
+// _renameEnterpriseImpl. Course/instructor PATCHes are scoped to currentTool.
+//
+// Creates a 'before-normalize' backup first so a botched migration is reversible.
+// Returns the number of duplicate entries collapsed (cosmetic, for logging).
+async function migrateNormalizeRefs() {
+  // Find duplicate groups in a list. Returns array of { canonical, aliases[] }.
+  const findDupes = (arr) => {
+    const groups = new Map(); // key -> { entries: [original strings] }
+    (arr || []).forEach(v => {
+      const norm = normName(v);
+      if (!norm) return;
+      const key = norm.toLowerCase();
+      if (!groups.has(key)) groups.set(key, { entries: [] });
+      groups.get(key).entries.push(v);
+    });
+    const out = [];
+    for (const { entries } of groups.values()) {
+      // Pick first entry whose normName matches the entry as-is (already normalized).
+      // If none, pick the first non-empty entry and use its normName as canonical.
+      let canonical = entries.find(e => e === normName(e));
+      if (!canonical) canonical = normName(entries[0]);
+      const aliases = entries.filter(e => e !== canonical);
+      if (aliases.length) out.push({ canonical, aliases });
+    }
+    return out;
+  };
+
+  const courseDupes = findDupes(db.customCourses);
+  const entDupes    = findDupes(db.customEnterprises);
+  const instrDupes  = findDupes(db.instructors);
+
+  const totalDupes = courseDupes.length + entDupes.length + instrDupes.length;
+  if (totalDupes === 0) return 0;
+
+  // Safety net before mutating cloud data
+  try { await createBackup('before-normalize'); }
+  catch (e) { console.warn('Pre-normalize backup failed, continuing anyway:', e.message); }
+
+  let collapsed = 0;
+
+  // Helper: rewrite alias -> canonical in cloud (PATCH records) and locally.
+  // `scoped`: pass false for enterprises (shared across tools), true otherwise.
+  const rewrite = async (column, canonical, aliases, scoped) => {
+    for (const alias of aliases) {
+      if (alias === canonical) continue;
+      try {
+        await updateRecordsByField(column, alias, canonical, { scoped });
+      } catch (e) {
+        console.warn(`Normalize: failed to PATCH ${column}="${alias}" → "${canonical}":`, e.message);
+        // Continue with others — partial cleanup is better than aborting.
+      }
+      // Mirror locally (works on the camelCase JS field, not snake_case)
+      const jsField = column === 'tab_number' ? 'tabNumber' :
+                      column === 'full_name'  ? 'fullName'  :
+                      column;
+      db.records.forEach(r => { if (r[jsField] === alias) r[jsField] = canonical; });
+      collapsed++;
+    }
+  };
+
+  for (const { canonical, aliases } of courseDupes) {
+    await rewrite('course', canonical, aliases, true);
+    // Migrate QR mapping if it lived under an alias
+    if (db.courseQRs) {
+      for (const alias of aliases) {
+        if (db.courseQRs[alias] && !db.courseQRs[canonical]) db.courseQRs[canonical] = db.courseQRs[alias];
+        delete db.courseQRs[alias];
+      }
+    }
+    // Migrate group memberships
+    if (db.courseGroups) {
+      Object.keys(db.courseGroups).forEach(g => {
+        db.courseGroups[g] = db.courseGroups[g].map(m => aliases.includes(m) ? canonical : m);
+        // Dedup after substitution
+        db.courseGroups[g] = [...new Set(db.courseGroups[g])];
+      });
+    }
+  }
+  for (const { canonical, aliases } of entDupes) {
+    await rewrite('enterprise', canonical, aliases, false);
+  }
+  for (const { canonical, aliases } of instrDupes) {
+    await rewrite('instructor', canonical, aliases, true);
+    // hiddenInstructors flag migrates with the name
+    if (db.hiddenInstructors) {
+      for (const alias of aliases) {
+        if (db.hiddenInstructors[alias]) db.hiddenInstructors[canonical] = true;
+        delete db.hiddenInstructors[alias];
+      }
+    }
+  }
+
+  // Finally, dedup the ref-book arrays themselves
+  db.customCourses     = dedupByNormKey(db.customCourses);
+  db.customEnterprises = dedupByNormKey(db.customEnterprises);
+  db.instructors       = dedupByNormKey(db.instructors);
+  syncBaseSnapshotRecords();
+
+  return collapsed;
 }
 
 // Smart merge: combine cloud version with our local changes since baseSnapshot.
 // Strategy:
 //   - records: 3-way merge by id. Detect what we added/updated/deleted vs base, apply atop cloud.
 //     For records updated on both sides — last-write-wins (our version).
-//   - customCourses, customEnterprises, instructors: union of arrays (no concept of "delete on one side"
-//     since we can't distinguish "deleted by us" from "added by them"). Renaming via Refs tab also rewrites
-//     records, so additions/removals in custom lists are mostly additive in practice.
+//   - customCourses, customEnterprises, instructors: "ours wins". Ref books are edited by a
+//     single user (admin), never concurrently. Union (the original strategy) leaked stale
+//     pre-rename names back into the list as ghosts because it couldn't distinguish
+//     "renamed by us" from "still present in cloud". With single-author ref books, "ours" is
+//     the authoritative latest state.
 //   - Other top-level fields: prefer our version.
 function mergeDB(cloud, base, ours) {
   if (!base) return cloneDB(ours); // first save — nothing to merge against
@@ -2025,21 +2963,14 @@ function mergeDB(cloud, base, ours) {
 
   const mergedRecords = [...merged.values()];
 
-  // ---- Custom lists: union ----
-  const unionArr = (a, b) => {
-    const seen = new Set();
-    const out = [];
-    [...(a||[]), ...(b||[])].forEach(x => { if (x && !seen.has(x)) { seen.add(x); out.push(x); } });
-    return out;
-  };
-
   return {
     ...cloud,
     ...ours,
     records: mergedRecords,
-    customCourses:     unionArr(cloud.customCourses,     ours.customCourses),
-    customEnterprises: unionArr(cloud.customEnterprises, ours.customEnterprises),
-    instructors:       unionArr(cloud.instructors,       ours.instructors),
+    // Ref books: ours wins (see function header).
+    customCourses:     ours.customCourses     || cloud.customCourses     || [],
+    customEnterprises: ours.customEnterprises || cloud.customEnterprises || [],
+    instructors:       ours.instructors       || cloud.instructors       || [],
     // Merge QR map: ours wins on per-key conflict (we know what we just changed locally),
     // but cloud entries we never touched are preserved.
     courseQRs:         { ...(cloud.courseQRs||{}), ...(ours.courseQRs||{}) },
@@ -2064,7 +2995,7 @@ async function saveDB(opts = {}) {
   // Cancel pending autosave — we're saving now
   if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
 
-  setFileStatus('yellow', '⏳ Сохранение…');
+  setFileStatus('yellow', 'Сохранение…');
   try {
     // 0. Compute audit events (what WE changed since last sync) BEFORE merging
     const auditEvents = computeAuditEvents(baseSnapshot, db);
@@ -2093,6 +3024,18 @@ async function saveDB(opts = {}) {
     // QRs, instructors, flags. Sending `records: []` keeps the field present (so old code that
     // checks `data.records` still works) without bloating the row.
     const stateForCloud = { ...toSave, records: [] };
+    // For non-VR tools, customEnterprises is shared via the VR row — strip it from the body
+    // sent to this tool's row, and push changes to the VR row separately below.
+    let enterprisesToPushToVR = null;
+    if (currentTool !== 'vr') {
+      // Did we change customEnterprises since last load?
+      const baseEnts = JSON.stringify((baseSnapshot && baseSnapshot.customEnterprises) || []);
+      const oursEnts = JSON.stringify(stateForCloud.customEnterprises || []);
+      if (baseEnts !== oursEnts) {
+        enterprisesToPushToVR = stateForCloud.customEnterprises || [];
+      }
+      delete stateForCloud.customEnterprises;
+    }
 
     // 5. Upsert to cloud (db_state only — records were already synced individually)
     const res = await fetch(
@@ -2100,7 +3043,7 @@ async function saveDB(opts = {}) {
       {
         method: 'POST',
         headers: { ...SB_HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ id: DB_ROW_ID, data: stateForCloud })
+        body: JSON.stringify({ id: currentDbStateId(), data: stateForCloud })
       }
     );
     if (!res.ok) {
@@ -2108,12 +3051,36 @@ async function saveDB(opts = {}) {
       throw new Error('HTTP ' + res.status + ': ' + errText);
     }
 
+    // 5b. If customEnterprises changed and we're not in VR — push them into the VR row.
+    // Read-modify-write to avoid clobbering other fields in id=1.
+    if (enterprisesToPushToVR !== null) {
+      try {
+        const vrGet = await fetch(`${SUPABASE_URL}/rest/v1/db_state?id=eq.1&select=data`, { headers: SB_HEADERS });
+        if (vrGet.ok) {
+          const vrRows = await vrGet.json();
+          const vrData = vrRows[0]?.data || {};
+          vrData.customEnterprises = enterprisesToPushToVR;
+          vrData.lastModified = new Date().toISOString();
+          await fetch(
+            `${SUPABASE_URL}/rest/v1/db_state?id=eq.1`,
+            {
+              method: 'PATCH',
+              headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+              body: JSON.stringify({ data: vrData })
+            }
+          );
+        }
+      } catch (eEnt) {
+        console.warn('Push shared enterprises to VR row failed:', eEnt);
+      }
+    }
+
     // 6. Update local state to match what we saved
     db = toSave;
     baseSnapshot = cloneDB(toSave);
     isDirty = false;
     document.getElementById('saveBtn').disabled = true;
-    setFileStatus('green', '☁ Сохранено');
+    setFileStatus('green', 'Сохранено');
 
     // 7. Log audit events to Supabase (fire-and-forget — don't block save success)
     if (auditEvents.length) logAuditEvents(auditEvents);
@@ -2127,7 +3094,7 @@ async function saveDB(opts = {}) {
     }
   } catch(e) {
     console.error('saveDB error:', e);
-    setFileStatus('red', '❌ Ошибка сохранения');
+    setFileStatus('red', 'Ошибка сохранения');
     toast('Ошибка сохранения: ' + e.message, 'error');
   } finally {
     isSaving = false;
@@ -2145,8 +3112,18 @@ async function reloadDB() {
 // Skips if user has unsaved changes (don't clobber their work).
 async function backgroundPoll() {
   if (isDirty || isSaving || document.hidden) return;
+  // Pin the tool we're polling for. fetchCloudDB reads currentTool internally; if the user
+  // switches tools mid-poll, the cloud snapshot we get back will be for the wrong tool and
+  // applying it to `db` would overwrite the just-loaded data for the new tool.
+  const polledTool = currentTool;
   try {
     const cloud = await fetchCloudDB();
+    // Re-check AFTER the network call. fetchCloudDB can take 1-3 sec; during that window
+    // the user may have started typing — isDirty would now be true, but the original guard
+    // at function entry already passed. Applying the cloud snapshot would clobber their work.
+    if (isDirty || isSaving) return;
+    // Same idea for tool: if currentTool changed while we were waiting, discard this snapshot.
+    if (currentTool !== polledTool) return;
     const cloudStr = JSON.stringify(cloud);
     const baseStr  = baseSnapshot ? JSON.stringify(baseSnapshot) : null;
     if (cloudStr === baseStr) return; // no remote changes
@@ -2154,7 +3131,7 @@ async function backgroundPoll() {
     db = cloud;
     baseSnapshot = cloneDB(cloud);
     refreshAll();
-    setFileStatus('green', '☁ Обновлено из облака');
+    setFileStatus('green', 'Обновлено из облака');
     toast('Подгружены изменения от коллег', 'success');
   } catch(e) {
     console.warn('backgroundPoll error:', e.message);
@@ -2172,7 +3149,7 @@ function setFileStatus(color, text) {
 function markDirty() {
   isDirty = true;
   document.getElementById('saveBtn').disabled = false;
-  setFileStatus('yellow', '● Есть несохранённые изменения');
+  setFileStatus('yellow', 'Есть несохранённые изменения');
 
   // Reset debounce timer — save AUTOSAVE_DELAY ms after last change
   if (autosaveTimer) clearTimeout(autosaveTimer);
@@ -2191,13 +3168,15 @@ function generateId() {
 
 async function addRecord() {
   const date = document.getElementById('f_date').value;
-  const enterprise = document.getElementById('f_enterprise').value.trim();
+  // Normalize entity fields (collapse whitespace) so duplicates like "X" vs "X " don't
+  // accumulate in records or ref books.
+  const enterprise = normName(document.getElementById('f_enterprise').value);
   const tab = document.getElementById('f_tab').value.trim();
-  const name = document.getElementById('f_name').value.trim();
-  const position = document.getElementById('f_position').value.trim();
-  const course = document.getElementById('f_course').value.trim();
+  const name = normName(document.getElementById('f_name').value);
+  const position = normName(document.getElementById('f_position').value);
+  const course = normName(document.getElementById('f_course').value);
   const completion = parseInt(document.getElementById('f_completion').value) || 0;
-  const instructor = document.getElementById('f_instructor').value.trim();
+  const instructor = normName(document.getElementById('f_instructor').value);
 
   if (!date) { toast('Укажите дату обучения', 'error'); return; }
   if (!enterprise) { toast('Укажите предприятие', 'error'); return; }
@@ -2281,7 +3260,7 @@ function checkDuplicate() {
   const course = document.getElementById('f_course').value.trim();
   const month = getSelectedMonth();
   if (!tab || !course || !month) { document.getElementById('dupWarning').style.display = 'none'; return; }
-  const dup = activeRecords().find(r => r.tabNumber === tab && r.course === course && r.month === month);
+  const dup = activeRecords().find(r => r.tabNumber === tab && r.course === course && monthFromDate(r) === month);
   document.getElementById('dupWarning').style.display = dup ? 'flex' : 'none';
 }
 
@@ -2324,13 +3303,13 @@ function addGroupRow(values) {
   const v = values || {};
   tr.innerHTML = `
     <td><input type="text" class="g-tab mono-input" inputmode="numeric" pattern="[0-9]*"
-               value="${(v.tab||'').replace(/"/g,'&quot;')}"
+               value="${escapeHTML(v.tab||'')}"
                oninput="this.value=this.value.replace(/\\D/g,'')"
                placeholder="20436482"></td>
-    <td><input type="text" class="g-name" value="${(v.name||'').replace(/"/g,'&quot;')}" placeholder="Иванов И. И."></td>
-    <td><input type="text" class="g-position" value="${(v.position||'').replace(/"/g,'&quot;')}" placeholder="Должность"></td>
+    <td><input type="text" class="g-name" value="${escapeHTML(v.name||'')}" placeholder="Иванов И. И."></td>
+    <td><input type="text" class="g-position" value="${escapeHTML(v.position||'')}" placeholder="Должность"></td>
     <td><input type="number" class="g-completion mono-input" min="0" max="100" value="${v.completion||''}" placeholder="85"></td>
-    <td><button class="row-del-btn" onclick="this.closest('tr').remove(); updateGroupCount()" title="Удалить">✕</button></td>
+    <td><button class="row-del-btn" onclick="this.closest('tr').remove(); updateGroupCount()" title="Удалить"><i class="ti ti-x"></i></button></td>
   `;
   tbody.appendChild(tr);
   updateGroupCount();
@@ -2354,15 +3333,17 @@ function clearGroupForm() {
 
 function updateGroupCount() {
   const rows = document.getElementById('groupRowsBody').querySelectorAll('tr');
-  // Count non-empty rows (at least tab or name filled)
-  let nonEmpty = 0;
+  // Count rows that are actually saveable (both tab AND name). Used to be "tab OR name",
+  // which over-counted compared to saveGroup's own filter — the user saw "5" then got
+  // a "added 3, skipped 2" toast.
+  let saveable = 0;
   rows.forEach(tr => {
-    const tab = tr.querySelector('.g-tab')?.value.trim();
+    const tab  = tr.querySelector('.g-tab')?.value.trim();
     const name = tr.querySelector('.g-name')?.value.trim();
-    if (tab || name) nonEmpty++;
+    if (tab && name) saveable++;
   });
-  document.getElementById('groupCount').textContent = `(${nonEmpty})`;
-  document.getElementById('groupSaveCount').textContent = nonEmpty > 0 ? `(${nonEmpty})` : '';
+  document.getElementById('groupCount').textContent = `(${saveable})`;
+  document.getElementById('groupSaveCount').textContent = saveable > 0 ? `(${saveable})` : '';
 }
 
 // Parse pasted Excel data: split into lines, then split each line by tab.
@@ -2404,10 +3385,24 @@ function handleGroupPaste(e) {
     return;
   }
 
-  // Multi-row paste: replace all rows with parsed data (bulk import scenario)
+  // Multi-row paste: APPEND parsed rows to the end of the existing list (don't replace).
+  // Used to be replace-all, but that nuked everything the user had already typed if they
+  // accidentally pasted a multi-line snippet. Strip trailing empty rows first so the new
+  // ones appear contiguously after the last filled row, not after a block of empty ones.
   const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
   if (!lines.length) return;
-  document.getElementById('groupRowsBody').innerHTML = '';
+  const tbody = document.getElementById('groupRowsBody');
+  // Drop empty trailing rows (every field blank). Keep at least one row in the body in case
+  // all rows were empty — that one will get filled or replaced by the appended data.
+  const isEmpty = (tr) =>
+    [...tr.querySelectorAll('input')].every(inp => !inp.value.trim());
+  while (tbody.lastElementChild && isEmpty(tbody.lastElementChild) && tbody.children.length > 1) {
+    tbody.removeChild(tbody.lastElementChild);
+  }
+  // If the single remaining row is also empty, remove it too — paste will add fresh rows.
+  if (tbody.children.length === 1 && isEmpty(tbody.lastElementChild)) {
+    tbody.removeChild(tbody.lastElementChild);
+  }
   lines.forEach(line => {
     const cols = line.split('\t');
     addGroupRow({
@@ -2422,9 +3417,10 @@ function handleGroupPaste(e) {
 
 function saveGroup() {
   const date       = document.getElementById('g_date').value;
-  const enterprise = document.getElementById('g_enterprise').value.trim();
-  const course     = document.getElementById('g_course').value.trim();
-  const instructor = document.getElementById('g_instructor').value.trim();
+  // Same normalization rationale as addRecord — keep names canonical.
+  const enterprise = normName(document.getElementById('g_enterprise').value);
+  const course     = normName(document.getElementById('g_course').value);
+  const instructor = normName(document.getElementById('g_instructor').value);
 
   if (!date)       { toast('Укажите дату обучения', 'error'); return; }
   if (!enterprise) { toast('Укажите предприятие', 'error'); return; }
@@ -2436,8 +3432,8 @@ function saveGroup() {
   let skipped = 0;
   rows.forEach(tr => {
     const tab        = tr.querySelector('.g-tab').value.trim();
-    const name       = tr.querySelector('.g-name').value.trim();
-    const position   = tr.querySelector('.g-position').value.trim();
+    const name       = normName(tr.querySelector('.g-name').value);
+    const position   = normName(tr.querySelector('.g-position').value);
     const completion = parseInt(tr.querySelector('.g-completion').value) || 0;
     // Skip rows missing both tab and name (treat as empty)
     if (!tab && !name) { skipped++; return; }
@@ -2483,7 +3479,6 @@ function refreshAll() {
   populateYearSelectors(); // keep year dropdowns in sync with current data set
   updateKPIs();
   updateCharts();
-  renderRecentDash();
   renderRecentInput();
   filterRecords();
   updateFilterOptions();
@@ -2507,12 +3502,19 @@ function updateKPIs() {
   // Apply dashboard year filter to all KPIs and breakdown
   const recs = filterByDashboardYear(activeRecords());
   document.getElementById('kpiTotal').textContent = recs.length.toLocaleString('ru');
+  // Average completion % across the filtered records (new KPI card on the dashboard).
+  const completionVals = recs.map(r => Number(r.completion)).filter(v => !isNaN(v));
+  const avg = completionVals.length
+    ? Math.round(completionVals.reduce((s, v) => s + v, 0) / completionVals.length)
+    : 0;
+  const avgEl = document.getElementById('kpiAvg');
+  if (avgEl) avgEl.textContent = avg;
   const now = new Date();
   const curMonth = MONTHS[now.getMonth()];
   const curYear  = String(now.getFullYear());
   // "Текущий месяц" must match BOTH month and year — otherwise records from the same month
   // in a different year would be counted in (e.g. May 2025 records in May 2026 KPI).
-  const thisMonth = activeRecords().filter(r => r.month === curMonth && recordYear(r) === curYear).length;
+  const thisMonth = activeRecords().filter(r => monthFromDate(r) === curMonth && recordYear(r) === curYear).length;
   document.getElementById('kpiMonth').textContent = thisMonth;
   document.getElementById('kpiMonthLabel').textContent = curMonth + ' ' + curYear;
   renderInstructorBreakdown(recs);
@@ -2532,13 +3534,23 @@ function renderInstructorBreakdown(recs) {
   const total = recs.length || 1;
   const el = document.getElementById('instructorBreakdown');
   if (!sorted.length) { el.innerHTML = '<span style="color:var(--text3);font-size:12px">Нет данных</span>'; return; }
-  el.innerHTML = sorted.map(([name, cnt]) => {
+  el.innerHTML = sorted.map(([name, cnt], idx) => {
     const pct = Math.round(cnt / total * 100);
     const w = Math.round(cnt / sorted[0][1] * 100);
-    return `<div class="instr-row">
-      <span style="font-size:12px;min-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${name}</span>
-      <div class="instr-bar-wrap"><div class="instr-bar-fill" style="width:${w}%"></div></div>
-      <span style="font-family:var(--mono);font-size:12px;color:var(--cyan);min-width:48px;text-align:right">${cnt} <span style="color:var(--text3);font-size:10px">(${pct}%)</span></span>
+    // Initials for the avatar (first letters of name parts, max 2 chars).
+    const initials = name === '— не указан —' ? '—'
+      : name.replace(/[.,]/g, '').trim().split(/\s+/).map(p => p[0] || '').join('').slice(0, 2).toUpperCase();
+    const palette = [
+      'oklch(0.50 0.18 282)', 'oklch(0.62 0.12 200)', 'oklch(0.55 0.14 30)',
+      'oklch(0.58 0.13 158)', 'oklch(0.62 0.13 80)',  'oklch(0.55 0.14 320)',
+      'oklch(0.62 0.12 240)', 'oklch(0.58 0.13 100)',
+    ];
+    const color = palette[idx % palette.length];
+    return `<div class="instr-card-row" data-color="${color}">
+      <div class="instr-card-av" style="background:${color}">${escapeHTML(initials)}</div>
+      <div class="instr-card-name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
+      <div class="instr-card-num">${cnt}<span class="instr-card-pct"> · ${pct}%</span></div>
+      <div class="instr-card-bar"><div class="instr-card-fill" style="width:${w}%;background:${color}"></div></div>
     </div>`;
   }).join('');
 }
@@ -2553,32 +3565,15 @@ function renderHTMLBarChart(containerId, labels, data, color) {
 
   el.innerHTML = labels.map((label, i) => {
     const pct = (data[i] / maxVal * 100).toFixed(2);
+    const isLast = i === labels.length - 1;
     return `
-      <div style="display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--border)">
-        <div style="
-          width:200px;min-width:200px;
-          text-align:right;
-          font-size:12px;font-family:var(--sans);
-          color:var(--text2);
-          line-height:1.45;
-          word-break:break-word;
-          white-space:normal;
-          padding-right:4px;
-        ">${label}</div>
-        <div style="flex:1;height:22px;background:var(--bg2);border-radius:3px;overflow:hidden;position:relative">
-          <div style="
-            position:absolute;top:0;left:0;
-            height:100%;
-            width:${pct}%;
-            background:${color};
-            border-radius:3px;
-            transition:width 0.5s ease;
-          "></div>
-        </div>
-        <div style="
-          font-family:var(--mono);font-size:12px;
-          color:var(--text2);min-width:36px;text-align:right;
-        ">${data[i]}</div>
+      <div style="display:grid;grid-template-columns:24px 1fr 140px 48px;align-items:center;gap:14px;padding:9px 2px;${isLast ? '' : 'border-bottom:1px solid var(--border);'}">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${i + 1}</span>
+        <span style="font-size:13px;color:var(--text);font-family:var(--sans);line-height:1.45;word-break:break-word">${escapeHTML(label)}</span>
+        <span style="height:8px;background:var(--card2);border-radius:4px;overflow:hidden;position:relative">
+          <span style="position:absolute;top:0;left:0;height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width 0.5s ease;display:block"></span>
+        </span>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);text-align:right">${data[i]}</span>
       </div>`;
   }).join('');
 }
@@ -2612,7 +3607,7 @@ function updateCharts() {
   renderHTMLBarChart('chartCourses',
     coSorted.map(e => e[0]),
     coSorted.map(e => e[1]),
-    '#0b8a94');
+    '#5b4ed1');
 
 
 }
@@ -2627,8 +3622,8 @@ function updateStackedBarChart(id, recs, chartsObj) {
   if (!ctx) return;
 
   // Same colors as donut so the two charts are visually consistent
-  const colors = ['#1a6ef5','#06b6d4','#f5a623','#22c55e','#f43f5e','#a855f7','#f97316','#84cc16'];
-  const otherColor = '#a8a29e';
+  const colors = ['#5b4ed1','#2dadb5','#d9a432','#15a571','#e85a6d','#9968e3','#f08648','#84cc16'];
+  const otherColor = '#9ca0b3';
 
   // Find top-8 enterprises by total record count
   const totals = {};
@@ -2644,9 +3639,10 @@ function updateStackedBarChart(id, recs, chartsObj) {
     matrix[m]['__other'] = 0;
   });
   recs.forEach(r => {
-    if (!r.month || !r.enterprise) return;
+    const m = monthFromDate(r);
+    if (!m || !r.enterprise) return;
     const bucket = topSet.has(r.enterprise) ? r.enterprise : '__other';
-    if (matrix[r.month]) matrix[r.month][bucket]++;
+    if (matrix[m]) matrix[m][bucket]++;
   });
 
   // Build datasets — one per enterprise. Skip "Прочие" if always zero.
@@ -2709,10 +3705,14 @@ function updateStackedBarChart(id, recs, chartsObj) {
         }
       },
       scales: {
-        x: { stacked: true, grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } },
-        y: { stacked: true, grid: { color: '#dcd7cc' }, ticks: { color: '#5a5040', font: { family: 'JetBrains Mono', size: 11 } } }
+        x: { stacked: true, grid: { color: '#e6e8ef', drawBorder: false }, ticks: { color: '#9ca0b3', font: { family: 'JetBrains Mono', size: 11 } } },
+        y: { stacked: true, grid: { color: '#e6e8ef', drawBorder: false }, ticks: { color: '#9ca0b3', font: { family: 'JetBrains Mono', size: 11 } } }
       },
-      responsive: true, maintainAspectRatio: true
+      // maintainAspectRatio:false means Chart.js fills its container without trying to
+      // grow it — canvas height is controlled by CSS (global `canvas { max-height: 260px }`).
+      // With :true, repeated mobile/desktop viewport toggles caused the canvas to keep
+      // stretching the page (the "canvas-bug" called out in v58 review §7.2).
+      responsive: true, maintainAspectRatio: false
     }
   });
 }
@@ -2724,11 +3724,11 @@ function updateDonut(id, labels, data, chartsObj) {
   if (dict[id]) dict[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
   if (!ctx) return;
-  const colors = ['#1a6ef5','#06b6d4','#f5a623','#22c55e','#f43f5e','#a855f7','#f97316','#84cc16'];
+  const colors = ['#5b4ed1','#2dadb5','#d9a432','#15a571','#e85a6d','#9968e3','#f08648','#84cc16'];
   const total = data.reduce((a,b) => a + b, 0) || 1;
   dict[id] = new Chart(ctx, {
     type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#f2ede3', borderWidth: 2 }] },
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#ffffff', borderWidth: 2 }] },
     options: {
       plugins: {
         legend: {
@@ -2777,32 +3777,6 @@ function updateDonut(id, labels, data, chartsObj) {
   });
 }
 
-function renderRecentDash() {
-  // Show 20 most-recent records by date (desc). Explicit sort, because after v43 records
-  // are loaded from the Supabase table already sorted desc — relying on .reverse() of
-  // db.records pre-v43 push order would now show oldest records instead of newest.
-  // Secondary sort by createdAt to get stable ordering when multiple records share a date.
-  const recent = filterByDashboardYear(activeRecords())
-    .slice()
-    .sort((a, b) => {
-      const d = (b.date || '').localeCompare(a.date || '');
-      if (d !== 0) return d;
-      return (b.createdAt || '').localeCompare(a.createdAt || '');
-    })
-    .slice(0, 20);
-  const tbody = document.getElementById('dashRecentBody');
-  if (!recent.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:30px">Нет данных</td></tr>'; return; }
-  tbody.innerHTML = recent.map(r => `
-    <tr>
-      <td class="mono">${formatDate(r.date)}</td>
-      <td>${r.fullName}</td>
-      <td><span class="badge badge-blue">${r.enterprise}</span></td>
-      <td>${r.course}</td>
-      <td>${renderProgress(r.completion)}</td>
-      <td class="mono" style="font-size:11px">${r.instructor||'—'}</td>
-    </tr>`).join('');
-}
-
 function renderRecentInput() {
   const active = activeRecords();
   // Same sort logic as the dashboard: explicit date desc + createdAt desc for stability
@@ -2823,7 +3797,7 @@ function renderRecentInput() {
       <td>${r.course}</td>
       <td>${renderProgress(r.completion)}</td>
       <td class="mono" style="font-size:11px">${r.instructor||'—'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')">✕</button></td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')"><i class="ti ti-x"></i></button></td>
     </tr>`).join('');
 }
 
@@ -2844,6 +3818,10 @@ function sortJournal(field) {
 }
 
 function filterRecords() {
+  // Clear any prior bulk selection — otherwise rows that are no longer visible after the
+  // filter change stay selected, and a subsequent "delete selected" would silently nuke
+  // records the user can't see. Easier to make the user re-select than to risk that.
+  selectedIds.clear();
   const search = document.getElementById('searchInput').value.toLowerCase();
   const year = document.getElementById('filterYear')?.value || '';
   const month = document.getElementById('filterMonth').value;
@@ -2862,7 +3840,7 @@ function filterRecords() {
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
     if (dateTo && (!r.date || r.date > dateTo)) return false;
     if (year && recordYear(r) !== year) return false;
-    if (month && r.month !== month) return false;
+    if (month && monthFromDate(r) !== month) return false;
     if (enterprises.length && !enterprises.includes(r.enterprise)) return false;
     if (course && r.course !== course) return false;
     if (instructor && (r.instructor||'') !== instructor) return false;
@@ -2891,7 +3869,7 @@ function renderJournal() {
   document.getElementById('paginationInfo').textContent = `${total} записей`;
 
   if (!page.length) {
-    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">🔍</div><strong>Ничего не найдено</strong><p>Попробуйте изменить фильтры или условия поиска</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon"><i class="ti ti-search"></i></div><strong>Ничего не найдено</strong><p>Попробуйте изменить фильтры или условия поиска</p></div></td></tr>';
     document.getElementById('pageBtns').innerHTML = '';
     return;
   }
@@ -2903,25 +3881,48 @@ function renderJournal() {
     return `<tr>
       <td><input type="checkbox" ${checked} onchange="toggleSelect('${r.id}', this)"></td>
       <td class="mono">${formatDate(r.date)}</td>
-      <td><span class="badge badge-blue" style="font-size:11px">${r.month||'—'}</span></td>
-      <td>${r.enterprise}</td>
-      <td class="mono">${r.tabNumber}</td>
-      <td>${r.fullName}</td>
-      <td style="color:var(--text2);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.position||'—'}</td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.course}">${r.course}</td>
+      <td><span class="badge badge-blue" style="font-size:11px">${escapeHTML(monthFromDate(r)||'—')}</span></td>
+      <td>${escapeHTML(r.enterprise||'')}</td>
+      <td class="mono">${escapeHTML(r.tabNumber||'')}</td>
+      <td>${escapeHTML(r.fullName||'')}</td>
+      <td style="color:var(--text2);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHTML(r.position||'—')}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHTML(r.course||'')}">${escapeHTML(r.course||'')}</td>
       <td><span class="badge ${badgeClass}">${pct}%</span></td>
-      <td class="mono" style="font-size:11px;color:var(--text2)">${r.instructor||'—'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')">✕</button></td>
+      <td class="mono" style="font-size:11px;color:var(--text2)">${escapeHTML(r.instructor||'—')}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')"><i class="ti ti-x"></i></button></td>
     </tr>`;
   }).join('');
 
-  // Pagination
+  // Pagination — compact with ellipses. Show first, last, current ± 2; gaps are "…".
+  // Was: 1 2 3 4 ... 167 as a flat list of 167 buttons. Now: 1 … 8 9 [10] 11 12 … 167.
   const pages = Math.ceil(total / PAGE_SIZE);
   const pb = document.getElementById('pageBtns');
   pb.innerHTML = '';
-  for (let i = 1; i <= pages; i++) {
-    pb.innerHTML += `<div class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</div>`;
+  if (pages <= 1) { updateBulkActions(); return; }
+
+  const btn = (i) =>
+    `<div class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</div>`;
+  const dots = () =>
+    `<div class="page-btn" style="cursor:default;color:var(--text3);background:transparent">…</div>`;
+  const arrow = (i, glyph, disabled) =>
+    `<div class="page-btn" style="${disabled?'opacity:0.4;cursor:default':'cursor:pointer'}" ${disabled?'':`onclick="goPage(${i})"`}>${glyph}</div>`;
+
+  // Pages to show: 1, last, current ± 2 (deduped, sorted)
+  const window = 2;
+  const pageSet = new Set([1, pages]);
+  for (let i = currentPage - window; i <= currentPage + window; i++) {
+    if (i >= 1 && i <= pages) pageSet.add(i);
   }
+  const pageList = [...pageSet].sort((a,b) => a - b);
+
+  let html = '';
+  html += arrow(Math.max(1, currentPage - 1), '◀', currentPage <= 1);
+  pageList.forEach((p, idx) => {
+    if (idx > 0 && p - pageList[idx - 1] > 1) html += dots();
+    html += btn(p);
+  });
+  html += arrow(Math.min(pages, currentPage + 1), '▶', currentPage >= pages);
+  pb.innerHTML = html;
   updateBulkActions();
 }
 
@@ -2980,12 +3981,13 @@ function toggleDateRange(useRange) {
 
 function updateFilterOptions() {
   const recs = activeRecords();
-  const months = [...new Set(recs.map(r=>r.month))].filter(Boolean);
+  // Список месяцев — фиксированный (январь → декабрь). Не берём из данных,
+  // чтобы избежать мусора из Excel-импорта ("Пятница", разный регистр).
   const enterprises = [...new Set(recs.map(r=>r.enterprise))].filter(Boolean).sort();
   const courses = [...new Set(recs.map(r=>r.course))].filter(Boolean).sort();
   const instructors = [...new Set(recs.map(r=>r.instructor||'').filter(Boolean))].sort();
 
-  fillSelect('filterMonth', months);
+  fillSelect('filterMonth', MONTHS);
   fillSelect('filterCourse', courses);
   fillSelect('filterInstructor', instructors);
   // Journal enterprise filter is a chip-multi — fill its datalist for autocomplete
@@ -3020,10 +4022,24 @@ function setupChipMulti(containerId, onChange) {
   renderChipMulti(container, onChange);
 }
 
-function addChip(container, value, onChange) {
+// arr.push stores plain string values. To track which chips were entered but didn't match
+// the datalist (so we can visually mark them as "foreign"), we keep a parallel WeakMap per
+// container: foreign[value] = true. Visually marked with .chip-multi-chip-foreign in CSS.
+const chipMultiForeign = new WeakMap();
+
+function addChip(container, value, onChange, { foreign = false } = {}) {
   const arr = chipMultiState.get(container);
-  if (!arr || arr.includes(value)) return;
+  if (!arr) return;
+  // Case-insensitive duplicate check — "Завод А" and "завод а" are the same filter value.
+  const lc = value.toLowerCase();
+  if (arr.some(v => v.toLowerCase() === lc)) return;
   arr.push(value);
+  // Mark this chip as "not from the datalist" if the user typed something unknown via Enter.
+  if (foreign) {
+    let fset = chipMultiForeign.get(container);
+    if (!fset) { fset = new Set(); chipMultiForeign.set(container, fset); }
+    fset.add(value);
+  }
   renderChipMulti(container, onChange);
   onChange();
 }
@@ -3033,12 +4049,15 @@ function removeChip(container, value, onChange) {
   if (!arr) return;
   const i = arr.indexOf(value);
   if (i >= 0) arr.splice(i, 1);
+  const fset = chipMultiForeign.get(container);
+  if (fset) fset.delete(value);
   renderChipMulti(container, onChange);
   onChange();
 }
 
 function renderChipMulti(container, onChange) {
   const arr = chipMultiState.get(container) || [];
+  const fset = chipMultiForeign.get(container) || new Set();
   const input = container.querySelector('.chip-multi-input');
   // Preserve any in-progress text the user is typing (but NOT a value we just consumed —
   // callers that just added a chip should clear input.value before calling renderChipMulti)
@@ -3048,9 +4067,10 @@ function renderChipMulti(container, onChange) {
   container.innerHTML = '';
   arr.forEach(v => {
     const chip = document.createElement('span');
-    chip.className = 'chip-multi-chip';
-    chip.title = v;
-    chip.innerHTML = `${escapeHTML(v)} <button type="button" aria-label="Удалить">✕</button>`;
+    const isForeign = fset.has(v);
+    chip.className = 'chip-multi-chip' + (isForeign ? ' chip-multi-chip-foreign' : '');
+    chip.title = isForeign ? `${v} — нет в справочнике, фильтр ничего не найдёт` : v;
+    chip.innerHTML = `${escapeHTML(v)} <button type="button" aria-label="Удалить"><i class="ti ti-x"></i></button>`;
     chip.querySelector('button').addEventListener('click', () => removeChip(container, v, onChange));
     container.appendChild(chip);
   });
@@ -3085,11 +4105,19 @@ function renderChipMulti(container, onChange) {
       e.preventDefault();
       const val = newInput.value.trim();
       newInput.value = '';
-      addChip(container, val, onChange);
-    } else if (e.key === 'Backspace' && !newInput.value) {
-      const a = chipMultiState.get(container);
-      if (a.length) { a.pop(); renderChipMulti(container, onChange); onChange(); }
+      // Match against datalist case-insensitively — if found, use the canonical casing from
+      // the datalist option (so "завод а" → "Завод А" stays consistent with the ref book).
+      const list = newInput.list;
+      let canonical = val;
+      let foreign = true;
+      if (list) {
+        const match = [...list.options].find(o => o.value.toLowerCase() === val.toLowerCase());
+        if (match) { canonical = match.value; foreign = false; }
+      }
+      addChip(container, canonical, onChange, { foreign });
     }
+    // Backspace no longer removes the last chip — too easy to wipe filters by accident.
+    // Removal is now only via the × button on each chip.
   });
 }
 
@@ -3115,10 +4143,13 @@ function escapeHTML(s) {
 }
 
 function saveInstructor() {
-  const val = document.getElementById('f_instructor').value.trim();
+  const val = normName(document.getElementById('f_instructor').value);
   if (!val) { toast('Введите имя инструктора', 'error'); return; }
   if (!db.instructors) db.instructors = [];
-  if (db.instructors.includes(val)) { toast('Инструктор уже в списке', 'error'); return; }
+  const key = val.toLowerCase();
+  if (db.instructors.some(i => normKey(i) === key)) {
+    toast('Инструктор уже в списке', 'error'); return;
+  }
   db.instructors.push(val);
   markDirty();
   updateAutocompleteLists();
@@ -3178,16 +4209,25 @@ function updateAutocompleteLists() {
 // ============================================================
 // EXPORT
 // ============================================================
+// Filename helpers — current tool's short label (e.g. "VR" or "Soldamatic") so an admin
+// working in Soldamatic mode doesn't get files named "vr_export".
+function exportSlug() {
+  return (TOOL_TYPES[currentTool] && TOOL_TYPES[currentTool].short) || currentTool;
+}
+function exportSlugSafe() {
+  return exportSlug().replace(/[^a-zA-Zа-яА-Я0-9]/g, '_');
+}
+
 function exportCSV() {
   const rows = [['Дата','Месяц','Предприятие','Цех','Табельный №','ФИО','Должность','Курс','% прохождения','Часы','Инструктор']];
-  filteredRecords.forEach(r => rows.push([r.date,r.month,r.enterprise,r.department,r.tabNumber,r.fullName,r.position,r.course,r.completion,r.hours,r.instructor]));
+  filteredRecords.forEach(r => rows.push([r.date,monthFromDate(r),r.enterprise,r.department,r.tabNumber,r.fullName,r.position,r.course,r.completion,r.hours,r.instructor]));
   const csv = rows.map(r => r.map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(',')).join('\n');
-  downloadText('\uFEFF' + csv, 'vr_export.csv', 'text/csv;charset=utf-8');
+  downloadText('\uFEFF' + csv, `${exportSlugSafe()}_export.csv`, 'text/csv;charset=utf-8');
   toast('CSV скачан', 'success');
 }
 
 function exportJSON() {
-  downloadText(JSON.stringify(db, null, 2), 'vr_training_backup.json', 'application/json');
+  downloadText(JSON.stringify(db, null, 2), `${exportSlugSafe()}_training_backup.json`, 'application/json');
   toast('JSON резервная копия скачана', 'success');
 }
 
@@ -3196,7 +4236,7 @@ function exportExcelFull() {
   const wb = XLSX.utils.book_new();
   const byMonth = {};
   activeRecords().forEach(r => {
-    const m = r.month || 'Без месяца';
+    const m = monthFromDate(r) || 'Без месяца';
     if (!byMonth[m]) byMonth[m] = [];
     byMonth[m].push(r);
   });
@@ -3210,7 +4250,7 @@ function exportExcelFull() {
     XLSX.utils.book_append_sheet(wb, ws, month);
   });
   if (wb.SheetNames.length === 0) { toast('Нет данных для экспорта', 'error'); return; }
-  XLSX.writeFile(wb, 'Обученные_VR_по_площадкам.xlsx');
+  XLSX.writeFile(wb, `Обученные_${exportSlugSafe()}_по_площадкам.xlsx`);
   toast('Excel файл скачан', 'success');
 }
 
@@ -3221,7 +4261,8 @@ function exportSummaryExcel() {
   activeRecords().forEach(r => {
     if (!matrix[r.enterprise]) matrix[r.enterprise] = {};
     if (!matrix[r.enterprise][r.course]) matrix[r.enterprise][r.course] = {};
-    const m = r.month;
+    const m = monthFromDate(r);
+    if (!m) return;
     matrix[r.enterprise][r.course][m] = (matrix[r.enterprise][r.course][m]||0)+1;
   });
   const header = ['Предприятие','Вид обучения','Итого обучено',...MONTHS];
@@ -3240,8 +4281,10 @@ function exportSummaryExcel() {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [20,36,8,...Array(12).fill(8)].map(w=>({wch:w}));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Факт 2026');
-  XLSX.writeFile(wb, 'Факт_обучения_VR.xlsx');
+  // Sheet name carries the current year so files generated in a new year don't keep saying "2026"
+  const sheetYear = new Date().getFullYear();
+  XLSX.utils.book_append_sheet(wb, ws, `Факт ${sheetYear}`);
+  XLSX.writeFile(wb, `Факт_обучения_${exportSlugSafe()}.xlsx`);
   toast('Сводный Excel скачан', 'success');
 }
 
@@ -3286,6 +4329,16 @@ function importJSON(event) {
       const existingIds = new Set(db.records.map(r => r.id));
       const newRecs = imported.records.filter(nr => nr.id && !existingIds.has(nr.id));
       const dupCount = imported.records.length - newRecs.length;
+      // Normalize entity fields on every imported record. JSON exports from older versions
+      // or from other tools may contain trailing whitespace / mixed case that would otherwise
+      // sneak past the ref-book dedup.
+      newRecs.forEach(r => {
+        r.enterprise = normName(r.enterprise);
+        r.fullName   = normName(r.fullName);
+        r.position   = normName(r.position);
+        r.course     = normName(r.course);
+        r.instructor = normName(r.instructor);
+      });
 
       // Batch-insert into records table. Chunked by 500 to avoid hitting URL/payload limits.
       const CHUNK = 500;
@@ -3297,13 +4350,13 @@ function importJSON(event) {
       syncBaseSnapshotRecords();
 
       // If the imported JSON has refs/groups/QRs/instructors, merge them into local state
-      // and mark dirty so they get written via saveDB.
+      // (deduping by normalized key) and mark dirty so they get written via saveDB.
       let refsChanged = false;
       ['customCourses','customEnterprises','instructors'].forEach(key => {
         if (Array.isArray(imported[key])) {
           if (!Array.isArray(db[key])) db[key] = [];
           const before = db[key].length;
-          imported[key].forEach(v => { if (!db[key].includes(v)) db[key].push(v); });
+          db[key] = dedupByNormKey([...db[key], ...imported[key]]);
           if (db[key].length !== before) refsChanged = true;
         }
       });
@@ -3401,7 +4454,10 @@ function importExcel(event) {
 
         const get = (row, key) => {
           const idx = col[key];
-          return (idx !== undefined && idx < row.length) ? String(row[idx] ?? '').trim() : '';
+          if (idx === undefined || idx >= row.length) return '';
+          // Normalize whitespace so "Стропальщик" and "Стропальщик " from messy Excel
+          // exports don't end up as separate records (and later as separate ref-book entries).
+          return normName(row[idx] ?? '');
         };
 
         const parseExcelDate = (raw) => {
@@ -3469,6 +4525,19 @@ function importExcel(event) {
           }
           db.records.push(...addedRecords);
           syncBaseSnapshotRecords();
+          // Extend ref books with any new entities from the imported records, dedup by
+          // normalized key so case/whitespace variants don't pollute the lists. Marks
+          // dirty so the next save persists the updated refs to db_state.
+          const refsBefore = JSON.stringify([
+            db.customCourses, db.customEnterprises, db.instructors
+          ]);
+          db.customCourses     = dedupByNormKey([...(db.customCourses||[]),     ...addedRecords.map(r => r.course)]);
+          db.customEnterprises = dedupByNormKey([...(db.customEnterprises||[]), ...addedRecords.map(r => r.enterprise)]);
+          db.instructors       = dedupByNormKey([...(db.instructors||[]),       ...addedRecords.map(r => r.instructor)]);
+          const refsAfter = JSON.stringify([
+            db.customCourses, db.customEnterprises, db.instructors
+          ]);
+          if (refsBefore !== refsAfter) markDirty();
         } catch (e) {
           toast('Ошибка загрузки в облако: ' + e.message, 'error');
           document.getElementById('importPreview').style.display='none';
@@ -3526,17 +4595,55 @@ function toast(msg, type = 'success') {
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 
+// Last sub-tab the user was on inside Admin — restored when re-opening the gear in the same session.
+let adminLastSubTab = 'refs';
+
+// Admin gear tab is virtual — clicking it routes to one of refs/export/history.
+// These three IDs share the admin sub-nav (each carries its own copy in HTML) so only
+// one .tab-pane.active exists at any time, instead of stacking admin atop a sub-pane.
+const ADMIN_SUB_TABS = ['refs', 'export', 'history'];
+
 function switchTab(name, el) {
+  // Gear click is virtual — translate it into the most recent admin sub-tab.
+  if (name === 'admin') {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    if (el) el.classList.add('active'); // keep the gear highlighted in the top nav
+    setAdminSubTab(adminLastSubTab);
+    return;
+  }
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  el.classList.add('active');
+  if (el) el.classList.add('active');
   if (name === 'journal') filterRecords();
-  if (name === 'refs') renderRefs();
   if (name === 'trainers') renderTrainersList();
+  if (name === 'qrcourses') { renderQRCoursesList(); renderQRCourseDetail(); }
   if (name === 'trash') renderTrash();
-  if (name === 'history') loadHistory();
+}
+
+// Activate one of the admin sub-panes. Each pane contains its own .admin-sub-nav copy,
+// so we must set/clear .active on every sub-tab button across the document (not just one
+// nav element) so they all stay in sync visually.
+function setAdminSubTab(name) {
+  if (!ADMIN_SUB_TABS.includes(name)) name = 'refs';
+  adminLastSubTab = name;
+  // Only one pane active overall
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  // Keep the gear icon highlighted in the top nav (it's the entry point for admin)
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  const gear = document.getElementById('adminGearTab');
+  if (gear) gear.classList.add('active');
+  // Activate target pane
+  const pane = document.getElementById('tab-' + name);
+  if (pane) pane.classList.add('active');
+  // Sync sub-nav buttons across all admin panes
+  document.querySelectorAll('.admin-sub-tab').forEach(t => {
+    t.classList.toggle('active', t.getAttribute('data-admin') === name);
+  });
+  // Render hook for the selected sub-tab
+  if (name === 'refs') renderRefs();
   if (name === 'export') renderBackupsList();
+  if (name === 'history') loadHistory();
 }
 
 function showModal(title, text, onConfirm) {
@@ -3604,13 +4711,13 @@ function renderRefCoursesTable() {
       <td>
         <div style="display:flex;align-items:center;gap:6px">
           <button class="ref-group-toggle ${expanded?'expanded':''}" onclick="toggleCourseGroup('${escG}')" title="${expanded?'Свернуть':'Развернуть'}">▶</button>
-          <span class="ref-group-icon">📁</span>
-          <span>${grp.name}</span>
+          <span class="ref-group-icon"><i class="ti ti-folder-filled"></i></span>
+          <span>${escapeHTML(grp.name)}</span>
           <span style="color:var(--text3);font-size:11px;margin-left:6px">(курсов: ${grp.members.length})</span>
         </div>
       </td>
       <td class="ref-count ${grp.total > 0 ? 'has-records' : 'no-records'}">${grp.total > 0 ? grp.total : '—'}</td>
-      <td><button class="btn btn-secondary btn-sm" onclick="openGroupModal('${escG}')">✏ Изменить</button></td>
+      <td><button class="btn btn-secondary btn-sm" onclick="openGroupModal('${escG}')"><i class="ti ti-pencil"></i> Изменить</button></td>
       <td></td>
     </tr>`);
     if (expanded) {
@@ -3640,17 +4747,17 @@ function courseRowHTML(name, cnt, child) {
   return `<tr class="${trClass}">
     <td style="font-size:13px">
       <div style="display:flex;align-items:center;gap:8px">
-        ${qrCell}<span>${name}</span>
+        ${qrCell}<span>${escapeHTML(name)}</span>
       </div>
     </td>
     <td class="ref-count ${cnt > 0 ? 'has-records' : 'no-records'}">${cnt > 0 ? cnt : '—'}</td>
     <td>
       <div style="display:flex;gap:6px">
         <input class="ref-rename-input" id="inp_${id}" value="${esc}" placeholder="Новое название">
-        <button class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="renameCourse('${esc}', document.getElementById('inp_${id}').value)">✏ Применить</button>
+        <button class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="renameCourse('${esc}', document.getElementById('inp_${id}').value)"><i class="ti ti-check"></i> Применить</button>
       </div>
     </td>
-    <td><button class="btn btn-danger btn-sm" onclick="deleteRefCourse('${esc}', ${cnt})" title="Удалить">✕</button></td>
+    <td><button class="btn btn-danger btn-sm" onclick="deleteRefCourse('${esc}', ${cnt})" title="Удалить"><i class="ti ti-x"></i></button></td>
   </tr>`;
 }
 
@@ -3686,7 +4793,7 @@ function renderRefTable(tbodyId, entries, field, renameFn, deleteFn, withQR) {
   const safeId = (s) => s.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_').slice(0,40);
   tbody.innerHTML = entries.map(([name, cnt]) => {
     const id = safeId(name) + '_' + tbodyId;
-    const esc = name.replace(/'/g, "\'").replace(/"/g, '&quot;');
+    const esc = name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     // QR icon: only for courses. Color depends on whether a URL is already saved.
     let qrCell = '';
     if (withQR) {
@@ -3698,22 +4805,26 @@ function renderRefTable(tbodyId, entries, field, renameFn, deleteFn, withQR) {
     return `<tr>
       <td style="font-size:13px">
         <div style="display:flex;align-items:center;gap:8px">
-          ${qrCell}<span>${name}</span>
+          ${qrCell}<span>${escapeHTML(name)}</span>
         </div>
       </td>
       <td class="ref-count ${cnt > 0 ? 'has-records' : 'no-records'}">${cnt > 0 ? cnt : '—'}</td>
       <td>
         <div style="display:flex;gap:6px">
           <input class="ref-rename-input" id="inp_${id}" value="${esc}" placeholder="Новое название">
-          <button class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="${renameFn.name}('${esc}', document.getElementById('inp_${id}').value)">✏ Применить</button>
+          <button class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="${renameFn.name}('${esc}', document.getElementById('inp_${id}').value)"><i class="ti ti-check"></i> Применить</button>
         </div>
       </td>
-      <td><button class="btn btn-danger btn-sm" onclick="${deleteFn.name}('${esc}', ${cnt})" title="Удалить">✕</button></td>
+      <td><button class="btn btn-danger btn-sm" onclick="${deleteFn.name}('${esc}', ${cnt})" title="Удалить"><i class="ti ti-x"></i></button></td>
     </tr>`;
   }).join('');
 }
 
 async function renameCourse(oldName, newName) {
+  return _enqueueRename(() => _renameCourseImpl(oldName, newName));
+}
+
+async function _renameCourseImpl(oldName, newName) {
   newName = newName.trim();
   if (!newName || newName === oldName) { toast('Введите новое название', 'error'); return; }
   // Push the rename to the records table FIRST. If this fails we abort and don't mutate
@@ -3770,10 +4881,14 @@ function _removeCustomCourse(name) {
 }
 
 function addRefCourse() {
-  const val = document.getElementById('newCourseName').value.trim();
+  const val = normName(document.getElementById('newCourseName').value);
   if (!val) { toast('Введите название курса', 'error'); return; }
   if (!db.customCourses) db.customCourses = [];
-  if (db.customCourses.includes(val)) { toast('Курс уже есть в справочнике', 'error'); return; }
+  // Case-insensitive duplicate check — "Стропальщик" and "стропальщик" should be one.
+  const key = val.toLowerCase();
+  if (db.customCourses.some(c => normKey(c) === key)) {
+    toast('Курс уже есть в справочнике', 'error'); return;
+  }
   db.customCourses.push(val);
   document.getElementById('newCourseName').value = '';
   markDirty(); refreshAll(); renderRefs();
@@ -3781,11 +4896,16 @@ function addRefCourse() {
 }
 
 async function renameEnterprise(oldName, newName) {
+  return _enqueueRename(() => _renameEnterpriseImpl(oldName, newName));
+}
+
+async function _renameEnterpriseImpl(oldName, newName) {
   newName = newName.trim();
   if (!newName || newName === oldName) { toast('Введите новое название', 'error'); return; }
-  // Same pattern as renameCourse: push to cloud first, then mutate local state
+  // Same pattern as renameCourse: push to cloud first, then mutate local state.
+  // Enterprises are shared across all tools — PATCH must NOT be scoped by tool_type.
   try {
-    await updateRecordsByField('enterprise', oldName, newName);
+    await updateRecordsByField('enterprise', oldName, newName, { scoped: false });
   } catch (e) {
     toast('Ошибка переименования в облаке: ' + e.message, 'error');
     return;
@@ -3795,7 +4915,10 @@ async function renameEnterprise(oldName, newName) {
   syncBaseSnapshotRecords();
   if (db.customEnterprises) db.customEnterprises = db.customEnterprises.map(e => e === oldName ? newName : e);
   markDirty(); refreshAll(); renderRefs();
-  toast(`Переименовано: «${oldName}» → «${newName}» (затронуто записей: ${count})`, 'success');
+  // Enterprises are shared across tools, so the cloud PATCH above may have touched records
+  // we don't see locally. `count` reflects only the currently loaded tool's records.
+  const toolLabel = (TOOL_TYPES[currentTool] && TOOL_TYPES[currentTool].short) || currentTool;
+  toast(`Переименовано: «${oldName}» → «${newName}» (в ${toolLabel}: ${count})`, 'success');
 }
 
 function deleteRefEnterprise(name, cnt) {
@@ -3813,10 +4936,13 @@ function _removeCustomEnt(name) {
 }
 
 function addRefEnterprise() {
-  const val = document.getElementById('newEntName').value.trim();
+  const val = normName(document.getElementById('newEntName').value);
   if (!val) { toast('Введите название предприятия', 'error'); return; }
   if (!db.customEnterprises) db.customEnterprises = [];
-  if (db.customEnterprises.includes(val)) { toast('Предприятие уже есть в справочнике', 'error'); return; }
+  const key = val.toLowerCase();
+  if (db.customEnterprises.some(e => normKey(e) === key)) {
+    toast('Предприятие уже есть в справочнике', 'error'); return;
+  }
   db.customEnterprises.push(val);
   document.getElementById('newEntName').value = '';
   markDirty(); refreshAll(); renderRefs();
@@ -3962,6 +5088,151 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ============================================================
+// QR COURSES TAB — read-only browser for QR codes
+// Data source: db.customCourses (full list) + db.courseQRs (which have URLs)
+// Layout: left list (rows) + right preview (card) — reuses .trainers-layout/.trainer-row
+// classes. Editing URLs is NOT here — stays in Refs tab.
+// ============================================================
+
+let selectedQRCourse = null;
+
+function renderQRCoursesList() {
+  const bodyEl = document.getElementById('qrCoursesListBody');
+  if (!bodyEl) return;
+  const search = (document.getElementById('qrCourseSearch')?.value || '').trim().toLowerCase();
+  const qrs = db.courseQRs || {};
+  // Dedupe by normalized key: trim + collapse whitespace + lowercase. Same key = same course.
+  // Among duplicates, prefer the one that has a QR mapping; otherwise keep the first occurrence.
+  const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  const seen = new Map(); // normKey -> displayName
+  (db.customCourses || []).forEach(name => {
+    if (!name) return;
+    const key = norm(name);
+    if (!seen.has(key)) seen.set(key, name);
+    else if (!qrs[seen.get(key)] && qrs[name]) seen.set(key, name); // prefer the one with QR
+  });
+  const unique = [...seen.values()];
+
+  // Split: with QR first (alpha), without QR after (alpha, faded)
+  const withQR = [];
+  const withoutQR = [];
+  unique.forEach(name => {
+    if (search && !name.toLowerCase().includes(search)) return;
+    if (qrs[name]) withQR.push(name);
+    else withoutQR.push(name);
+  });
+  withQR.sort((a, b) => a.localeCompare(b, 'ru'));
+  withoutQR.sort((a, b) => a.localeCompare(b, 'ru'));
+
+  if (!withQR.length && !withoutQR.length) {
+    bodyEl.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">${
+      search ? 'Ничего не найдено' : 'Справочник курсов пуст'
+    }</div>`;
+    return;
+  }
+
+  const rowHtml = (name, hasQR) => {
+    const safe = name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const active = (selectedQRCourse === name) ? ' active' : '';
+    const muted = hasQR ? '' : 'opacity:0.55;';
+    const icon = hasQR
+      ? '<i class="ti ti-qrcode" style="font-size:14px;color:var(--text3)"></i>'
+      : '<i class="ti ti-qrcode-off" style="font-size:14px;color:var(--text3)"></i>';
+    return `<div class="trainer-row${active}" style="${muted}padding:10px 12px" onclick="selectQRCourse('${safe}')">
+      <span class="trainer-row-name" style="font-size:12px">${escapeHTML(name)}</span>${icon}
+    </div>`;
+  };
+
+  bodyEl.innerHTML = [
+    ...withQR.map(n => rowHtml(n, true)),
+    ...withoutQR.map(n => rowHtml(n, false))
+  ].join('');
+}
+
+function selectQRCourse(name) {
+  selectedQRCourse = name;
+  renderQRCoursesList(); // re-render to update active state
+  renderQRCourseDetail();
+}
+
+function renderQRCourseDetail() {
+  const detailEl = document.getElementById('qrCourseDetail');
+  if (!detailEl) return;
+  if (!selectedQRCourse) {
+    detailEl.innerHTML = `<div class="empty-state" style="padding:80px 20px">
+      <div class="empty-icon"><i class="ti ti-arrow-left"></i></div>
+      <strong>Выберите курс</strong>
+      <p>Кликните на название в списке слева, чтобы увидеть QR-код</p>
+    </div>`;
+    return;
+  }
+  const url = (db.courseQRs || {})[selectedQRCourse] || '';
+  if (!url) {
+    detailEl.innerHTML = `<div style="padding:40px 20px;text-align:center">
+      <div style="font-size:16px;font-weight:500;margin-bottom:16px">${escapeHTML(selectedQRCourse)}</div>
+      <div style="color:var(--text3);font-size:48px;margin:24px 0"><i class="ti ti-qrcode-off"></i></div>
+      <div style="color:var(--text2);font-size:13px;margin-bottom:8px">QR-код для этого курса не настроен</div>
+      <div style="color:var(--text3);font-size:12px">Добавьте ссылку через вкладку «Справочники»</div>
+    </div>`;
+    return;
+  }
+  // Generate the QR preview. pixelSize 6 yields ~340px which fits the right pane without
+  // forcing horizontal scroll. CSS on the img scales it down further if the pane is narrow.
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  const imgTag = qr.createImgTag(6, 4);
+  detailEl.innerHTML = `<div style="padding:24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px">
+    <div style="font-size:16px;font-weight:500">${escapeHTML(selectedQRCourse)}</div>
+    <div id="qrPreviewClickable" style="cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:12px;background:#fff;max-width:100%" onclick="openQRFullscreen()" title="Открыть на весь экран">
+      ${imgTag}
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="openQRFullscreen()"><i class="ti ti-maximize"></i> На весь экран</button>
+  </div>`;
+  // Make the QR <img> scale down inside narrow panes
+  const previewImg = detailEl.querySelector('#qrPreviewClickable img');
+  if (previewImg) { previewImg.style.maxWidth = '100%'; previewImg.style.height = 'auto'; previewImg.style.display = 'block'; }
+}
+
+function openQRFullscreen() {
+  if (!selectedQRCourse) return;
+  const url = (db.courseQRs || {})[selectedQRCourse] || '';
+  if (!url) return;
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  // pixelSize 10 + quiet 4 yields ~430px. The modal card has overflow:auto, so on small
+  // viewports it'll scroll rather than crop. max-width:100% on the img keeps the quiet
+  // zone visible when card width is the constraint.
+  const canvasEl = document.getElementById('qrFullscreenCanvas');
+  canvasEl.innerHTML = qr.createImgTag(10, 4);
+  const img = canvasEl.querySelector('img');
+  if (img) {
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
+    img.style.display = 'block';
+  }
+  document.getElementById('qrFullscreenTitle').textContent = selectedQRCourse;
+  document.getElementById('qrFullscreenUrl').textContent = url;
+  document.getElementById('qrFullscreenOverlay').classList.add('open');
+}
+
+function closeQRFullscreen(e) {
+  // Called as onclick on the overlay: close only if clicked the overlay itself, not inner card.
+  // Also called directly from Esc handler with no argument.
+  if (e && e.target && e.target.id && e.target.id !== 'qrFullscreenOverlay') return;
+  document.getElementById('qrFullscreenOverlay').classList.remove('open');
+}
+
+// Esc closes the fullscreen overlay
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const ov = document.getElementById('qrFullscreenOverlay');
+    if (ov && ov.classList.contains('open')) closeQRFullscreen();
+  }
+});
+
+// ============================================================
 // COURSE GROUPS — purely visual grouping in the courses ref table
 //
 // Storage: db.courseGroups = { "Group A": ["Course 1", "Course 2"], ... }
@@ -3997,7 +5268,8 @@ function openGroupModal(existingName) {
     const checked = currentMembers.has(name) ? 'checked' : '';
     const disabled = inOther ? 'disabled' : '';
     const escAttr = name.replace(/"/g,'&quot;');
-    const label = inOther ? `${name} <span style="color:var(--text3);font-size:10px">(в другой группе)</span>` : name;
+    const escName = escapeHTML(name);
+    const label = inOther ? `${escName} <span style="color:var(--text3);font-size:10px">(в другой группе)</span>` : escName;
     return `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:13px;${inOther?'opacity:0.5':'cursor:pointer'}">
       <input type="checkbox" value="${escAttr}" ${checked} ${disabled}> ${label}
     </label>`;
@@ -4021,7 +5293,15 @@ function groupModalSave() {
 
   if (!db.courseGroups) db.courseGroups = {};
 
-  // Renaming a group: drop the old key
+  // Prevent duplicate group names (other than the one being edited). This check MUST happen
+  // BEFORE we delete the old key — otherwise renaming "А" to existing "Б" would silently
+  // drop "А" before the duplicate error fires, losing the original group entirely.
+  if (db.courseGroups[name] && name !== editingGroupName) {
+    toast('Группа с таким названием уже существует', 'error');
+    return;
+  }
+
+  // Renaming a group: drop the old key (safe to do now — duplicate check above passed)
   if (editingGroupName && editingGroupName !== name) {
     delete db.courseGroups[editingGroupName];
     // Update expanded-state set so the renamed group stays open if it was open
@@ -4029,12 +5309,6 @@ function groupModalSave() {
       expandedCourseGroups.delete(editingGroupName);
       expandedCourseGroups.add(name);
     }
-  }
-
-  // Prevent duplicate group names (other than the one being edited)
-  if (db.courseGroups[name] && name !== editingGroupName) {
-    toast('Группа с таким названием уже существует', 'error');
-    return;
   }
 
   db.courseGroups[name] = members;
@@ -4112,7 +5386,7 @@ function renderTrash() {
   // Newest deletions first
   trashed.sort((a,b) => (b.deletedAt||'').localeCompare(a.deletedAt||''));
   if (!trashed.length) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🗑</div><strong>Корзина пуста</strong><p>Удалённые записи будут появляться здесь</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon"><i class="ti ti-trash"></i></div><strong>Корзина пуста</strong><p>Удалённые записи будут появляться здесь</p></div></td></tr>';
     return;
   }
   tbody.innerHTML = trashed.map(r => {
@@ -4121,15 +5395,15 @@ function renderTrash() {
     return `<tr>
       <td class="mono" style="font-size:11px">${r.deletedAt ? formatDate(r.deletedAt.slice(0,10)) : '—'}</td>
       <td class="mono">${formatDate(r.date)}</td>
-      <td>${r.enterprise||'—'}</td>
-      <td class="mono">${r.tabNumber||'—'}</td>
-      <td>${r.fullName||'—'}</td>
-      <td>${r.course||'—'}</td>
+      <td>${escapeHTML(r.enterprise||'—')}</td>
+      <td class="mono">${escapeHTML(r.tabNumber||'—')}</td>
+      <td>${escapeHTML(r.fullName||'—')}</td>
+      <td>${escapeHTML(r.course||'—')}</td>
       <td><span class="badge badge-blue">${r.completion||0}%</span></td>
       <td><span class="badge ${daysClass}">${days} дн.</span></td>
       <td style="white-space:nowrap">
-        <button class="btn btn-secondary btn-sm" onclick="restoreFromTrash('${r.id}')" title="Восстановить">↩</button>
-        <button class="btn btn-danger btn-sm" onclick="purgeFromTrash('${r.id}')" title="Удалить навсегда">✕</button>
+        <button class="btn btn-secondary btn-sm" onclick="restoreFromTrash('${r.id}')" title="Восстановить"><i class="ti ti-arrow-back-up"></i></button>
+        <button class="btn btn-danger btn-sm" onclick="purgeFromTrash('${r.id}')" title="Удалить навсегда"><i class="ti ti-x"></i></button>
       </td>
     </tr>`;
   }).join('');
@@ -4172,16 +5446,38 @@ function restoreAllTrash() {
   const trashed = db.records.filter(r => r.deleted);
   if (!trashed.length) { toast('Корзина пуста', 'success'); return; }
   showModal('Восстановить все записи?', `Будет восстановлено ${trashed.length} записей.`, async () => {
-    try {
-      await Promise.all(trashed.map(r => updateRecord(r.id, { deleted: false, deletedAt: null })));
-    } catch (e) {
-      toast('Ошибка восстановления: ' + e.message, 'error');
-      return;
+    // Process in batches of 100 sequentially. Used to fire all updateRecord calls in parallel
+    // via Promise.all — at 500+ trashed records Supabase started returning rate-limit errors,
+    // and a partial failure left local + cloud out of sync with no rollback. Now we apply
+    // each successful batch locally before moving to the next; if one fails mid-way, the
+    // user gets a partial count and can re-run the operation on what's still in trash.
+    const BATCH = 100;
+    const restoredIds = [];
+    let firstError = null;
+    for (let i = 0; i < trashed.length; i += BATCH) {
+      const chunk = trashed.slice(i, i + BATCH);
+      try {
+        await Promise.all(chunk.map(r => updateRecord(r.id, { deleted: false, deletedAt: null })));
+        chunk.forEach(r => restoredIds.push(r.id));
+      } catch (e) {
+        firstError = e;
+        break;
+      }
     }
-    db.records.forEach(r => { if (r.deleted) { delete r.deleted; delete r.deletedAt; } });
-    syncBaseSnapshotRecords();
+    // Apply local state for whichever records did succeed
+    if (restoredIds.length) {
+      const successSet = new Set(restoredIds);
+      db.records.forEach(r => {
+        if (successSet.has(r.id)) { delete r.deleted; delete r.deletedAt; }
+      });
+      syncBaseSnapshotRecords();
+    }
     refreshAll(); closeModal();
-    toast(`Восстановлено: ${trashed.length}`, 'success');
+    if (firstError) {
+      toast(`Восстановлено: ${restoredIds.length} из ${trashed.length}. Ошибка: ${firstError.message}`, 'error');
+    } else {
+      toast(`Восстановлено: ${trashed.length}`, 'success');
+    }
   });
 }
 
@@ -4206,7 +5502,6 @@ function emptyTrash() {
 // ИСТОРИЯ ИЗМЕНЕНИЙ (Audit log)
 // ============================================================
 const AUDIT_RETENTION_DAYS = 30;
-let pendingAuditEvents = []; // queue events between saves
 
 // Compute diff between two db snapshots, return array of human-readable events.
 // Used at save time: compares baseSnapshot (last sync) with current db.
@@ -4285,9 +5580,13 @@ function computeAuditEvents(base, current) {
 // Push an audit event to Supabase. Called after each successful save.
 async function logAuditEvents(events) {
   if (!events || !events.length) return;
+  // tool_type tags every event with the currently active tool (vr/welder/...). loadHistory
+  // filters by it so each tool sees its own history; legacy rows with NULL tool_type from
+  // pre-v62 are shown in every tool's history (no way to disambiguate them).
   const rows = events.map(e => ({
     action: e.action,
     summary: e.summary,
+    tool_type: currentTool,
     created_at: new Date().toISOString()
   }));
   try {
@@ -4339,10 +5638,13 @@ const BACKUP_AUTO_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // weekly
 async function createBackup(reason) {
   try {
     const snapshot = cloneDB(db);
+    // Tag the backup with current tool so backups of one tool don't show up under another,
+    // and so trim/auto-cron logic counts per-tool.
+    const taggedReason = currentTool + ':' + reason;
     const res = await fetch(`${SUPABASE_URL}/rest/v1/backups`, {
       method: 'POST',
       headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ data: snapshot, reason })
+      body: JSON.stringify({ data: snapshot, reason: taggedReason })
     });
     if (!res.ok) {
       const t = await res.text();
@@ -4358,16 +5660,24 @@ async function createBackup(reason) {
   }
 }
 
-// Delete all but the newest BACKUPS_MAX_KEEP backups (by created_at desc).
+// Delete all but the newest BACKUPS_MAX_KEEP backups for the current tool (by created_at desc).
 async function trimOldBackups() {
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/backups?select=id&order=created_at.desc`,
+      `${SUPABASE_URL}/rest/v1/backups?select=id,reason&order=created_at.desc`,
       { headers: SB_HEADERS }
     );
     if (!res.ok) return;
     const rows = await res.json();
-    const toDelete = rows.slice(BACKUPS_MAX_KEEP).map(r => r.id);
+    // Only count this tool's backups. Legacy untagged rows (no ":" in reason) belong to VR.
+    const isOurs = r => {
+      if (!r.reason) return currentTool === 'vr';
+      const idx = r.reason.indexOf(':');
+      if (idx < 0) return currentTool === 'vr';
+      return r.reason.slice(0, idx) === currentTool;
+    };
+    const ours = rows.filter(isOurs);
+    const toDelete = ours.slice(BACKUPS_MAX_KEEP).map(r => r.id);
     if (!toDelete.length) return;
     // PostgREST allows DELETE with `id=in.(1,2,3)` filter
     await fetch(
@@ -4379,7 +5689,8 @@ async function trimOldBackups() {
   }
 }
 
-// Get list of backups (newest first). Each item: { id, reason, created_at, size_bytes }.
+// Get list of backups for current tool (newest first). Each item: { id, reason, created_at }.
+// `reason` is returned normalized (without tool prefix) so existing UI code works unchanged.
 async function listBackups() {
   try {
     const res = await fetch(
@@ -4387,7 +5698,18 @@ async function listBackups() {
       { headers: SB_HEADERS }
     );
     if (!res.ok) return [];
-    return await res.json();
+    const rows = await res.json();
+    // Filter by current tool prefix. Legacy untagged rows belong to VR.
+    return rows.filter(r => {
+      if (!r.reason) return currentTool === 'vr';
+      const idx = r.reason.indexOf(':');
+      if (idx < 0) return currentTool === 'vr';
+      return r.reason.slice(0, idx) === currentTool;
+    }).map(r => {
+      if (!r.reason) return r;
+      const idx = r.reason.indexOf(':');
+      return (idx < 0) ? r : { ...r, reason: r.reason.slice(idx + 1) };
+    });
   } catch (e) {
     console.warn('listBackups error:', e.message);
     return [];
@@ -4406,13 +5728,17 @@ async function fetchBackup(id) {
   return rows[0].data;
 }
 
-// Run on page load: if the most recent auto-weekly backup is older than the interval
-// (or doesn't exist), create one. This is "lazy cron" — depends on someone opening
-// the app at least weekly; for our use case (5 active users) that's a safe assumption.
+// Run on page load: if the most recent auto-weekly backup for the current tool is older
+// than the interval (or doesn't exist), create one. This is "lazy cron" — depends on someone
+// opening the app at least weekly; for our use case (5 active users) that's a safe assumption.
 async function maybeAutoBackup() {
   try {
+    // reason = '<tool>:auto-weekly' after v57. Legacy 'auto-weekly' without prefix counts for VR.
+    const reasonFilter = currentTool === 'vr'
+      ? `reason=in.(auto-weekly,vr:auto-weekly)`
+      : `reason=eq.${currentTool}:auto-weekly`;
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/backups?select=created_at&reason=eq.auto-weekly&order=created_at.desc&limit=1`,
+      `${SUPABASE_URL}/rest/v1/backups?select=created_at&${reasonFilter}&order=created_at.desc&limit=1`,
       { headers: SB_HEADERS }
     );
     if (!res.ok) return;
@@ -4422,7 +5748,7 @@ async function maybeAutoBackup() {
       // Make sure we have data to back up — skip if db is empty (e.g. first load failed)
       if (db && db.records && db.records.length > 0) {
         await createBackup('auto-weekly');
-        console.log('Auto-weekly backup created');
+        console.log('Auto-weekly backup created for', currentTool);
       }
     }
   } catch (e) {
@@ -4434,42 +5760,86 @@ async function maybeAutoBackup() {
 // backup of current state first so the operation is reversible.
 async function restoreBackup(id) {
   toast('Восстановление…', 'success');
-  // 1. Snapshot current state
-  const ok = await createBackup('before-restore');
-  if (!ok) {
-    if (!confirm('Не удалось создать резервный снимок текущего состояния. Продолжить восстановление БЕЗ возможности отката?')) return;
-  }
-  // 2. Fetch the chosen backup
-  let snapshot;
+  // Pause background polling for the duration of restore. Between the cloud DELETE and
+  // INSERT batches the records table is empty in the cloud; if poll fires it would replace
+  // local db with that empty state and the snapshot insert (still running) would be
+  // followed by another stale local view.
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   try {
-    snapshot = await fetchBackup(id);
-  } catch (e) {
-    toast('Ошибка загрузки бэкапа: ' + e.message, 'error');
-    return;
-  }
-  // 3. Replace cloud records table: delete all current rows, insert all from snapshot.
-  // We do this BEFORE replacing local db so that if it fails, local state isn't half-applied.
-  try {
-    const currentIds = db.records.map(r => r.id);
-    if (currentIds.length) await deleteRecordsBatch(currentIds);
+    // 1. Snapshot current state
+    const ok = await createBackup('before-restore');
+    if (!ok) {
+      if (!confirm('Не удалось создать резервный снимок текущего состояния. Продолжить восстановление БЕЗ возможности отката?')) return;
+    }
+    // 2. Fetch the chosen backup
+    let snapshot;
+    try {
+      snapshot = await fetchBackup(id);
+    } catch (e) {
+      toast('Ошибка загрузки бэкапа: ' + e.message, 'error');
+      return;
+    }
+    // 2b. Warn if backup contains records tagged for a different tool than we're currently in.
+    // fetchAllRecords filters by tool_type, so VR records restored while in Soldamatic mode would
+    // sit in the cloud table but be invisible in the UI. Better to surface this before doing damage.
     const snapshotRecords = Array.isArray(snapshot.records) ? snapshot.records : [];
-    if (snapshotRecords.length) {
-      const CHUNK = 500;
-      for (let i = 0; i < snapshotRecords.length; i += CHUNK) {
-        await insertRecordsBatch(snapshotRecords.slice(i, i + CHUNK));
+    const backupTools = [...new Set(snapshotRecords.map(r => r.toolType).filter(Boolean))];
+    const foreign = backupTools.filter(t => t !== currentTool);
+    if (foreign.length) {
+      const foreignLabels = foreign.map(t => (TOOL_TYPES[t] && TOOL_TYPES[t].short) || t).join(', ');
+      const currentLabel = (TOOL_TYPES[currentTool] && TOOL_TYPES[currentTool].short) || currentTool;
+      if (!confirm(`В бэкапе есть записи для другого инструмента (${foreignLabels}), а сейчас открыт ${currentLabel}. После восстановления эти записи попадут в облако, но не будут видны в текущем интерфейсе. Продолжить?`)) {
+        return;
       }
     }
-  } catch (e) {
-    toast('Ошибка восстановления записей: ' + e.message, 'error');
-    return;
+    // 3. Replace cloud records table: delete all current rows, insert all from snapshot.
+    // We do this BEFORE replacing local db so that if it fails, local state isn't half-applied.
+    // Keep a copy of pre-restore records so we can attempt recovery if the snapshot insert
+    // fails partway through — otherwise the cloud is left empty and the user has to manually
+    // restore the 'before-restore' backup we just made.
+    const preRestoreRecords = db.records.slice();
+    try {
+      const currentIds = db.records.map(r => r.id);
+      if (currentIds.length) await deleteRecordsBatch(currentIds);
+      if (snapshotRecords.length) {
+        const CHUNK = 500;
+        for (let i = 0; i < snapshotRecords.length; i += CHUNK) {
+          await insertRecordsBatch(snapshotRecords.slice(i, i + CHUNK));
+        }
+      }
+    } catch (e) {
+      toast('Ошибка восстановления записей: ' + e.message, 'error');
+      // Best-effort rollback: try to put the original records back so the cloud table
+      // doesn't end up empty (or half-snapshot). If this also fails, the user still has
+      // the 'before-restore' backup to fall back on manually.
+      try {
+        // Clean up whatever made it in during the failed restore, then re-insert originals.
+        const partialIds = (await fetchAllRecords()).map(r => r.id);
+        if (partialIds.length) await deleteRecordsBatch(partialIds);
+        if (preRestoreRecords.length) {
+          const CHUNK = 500;
+          for (let i = 0; i < preRestoreRecords.length; i += CHUNK) {
+            await insertRecordsBatch(preRestoreRecords.slice(i, i + CHUNK));
+          }
+        }
+        toast('Откат к состоянию до восстановления выполнен', 'success');
+      } catch (rollbackErr) {
+        console.error('Restore rollback also failed:', rollbackErr);
+        toast('Откат не удался. Используйте бэкап «before-restore» вручную.', 'error');
+      }
+      return;
+    }
+    // 4. Replace local db. Mark dirty + save explicitly so db_state reflects the snapshot too.
+    db = snapshot;
+    baseSnapshot = cloneDB(db);
+    isDirty = true;
+    await saveDB({ silent: true });
+    refreshAll();
+    toast('База восстановлена из бэкапа', 'success');
+  } finally {
+    // Restart polling regardless of outcome
+    pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
   }
-  // 4. Replace local db. Mark dirty + save explicitly so db_state reflects the snapshot too.
-  db = snapshot;
-  baseSnapshot = cloneDB(db);
-  isDirty = true;
-  await saveDB({ silent: true });
-  refreshAll();
-  toast('База восстановлена из бэкапа', 'success');
 }
 
 // Render the backups list table on the Export tab
@@ -4532,7 +5902,7 @@ function openClearDBModal() {
   document.getElementById('clearDBCount').textContent = (db.records || []).filter(r => !r.deleted).length;
   document.getElementById('clearDBPhrase').value = '';
   document.getElementById('clearDBConfirmBtn').disabled = true;
-  document.getElementById('clearDBBackupSpinner').textContent = '⏳';
+  document.getElementById('clearDBBackupSpinner').innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>';
   document.getElementById('clearDBBackupMsg').textContent = 'Создаём бэкап в облаке…';
   document.getElementById('clearDBModalOverlay').classList.add('open');
 
@@ -4540,12 +5910,12 @@ function openClearDBModal() {
   createBackup('before-clear').then(ok => {
     if (ok) {
       clearDBBackupReady = true;
-      document.getElementById('clearDBBackupSpinner').textContent = '✅';
+      document.getElementById('clearDBBackupSpinner').innerHTML = '<i class="ti ti-circle-check-filled" style="color:var(--green)"></i>';
       document.getElementById('clearDBBackupMsg').textContent = 'Бэкап создан. Доступен в разделе «Бэкапы».';
       // Re-evaluate confirm button enabled state
       document.getElementById('clearDBConfirmBtn').disabled = document.getElementById('clearDBPhrase').value !== 'ОЧИСТИТЬ';
     } else {
-      document.getElementById('clearDBBackupSpinner').textContent = '⚠';
+      document.getElementById('clearDBBackupSpinner').innerHTML = '<i class="ti ti-alert-triangle" style="color:var(--red)"></i>';
       document.getElementById('clearDBBackupMsg').textContent = 'Не удалось создать бэкап. Очистка заблокирована.';
     }
   });
@@ -4573,7 +5943,7 @@ async function confirmClearDB() {
   // Reset the danger toggle so the button hides itself again
   const tog = document.getElementById('dangerToggle');
   if (tog) { tog.checked = false; document.getElementById('dangerClearBtn').style.display = 'none'; }
-  toast('База очищена. Бэкап доступен для восстановления.', 'success');
+  toast('Журнал очищен. Бэкап доступен для восстановления.', 'success');
   renderBackupsList();
 }
 
@@ -4584,6 +5954,8 @@ async function confirmClearDB() {
 // ============================================================
 
 // Begin inline-rename: replace the row's name span with an input. Triggered by ✏ click.
+// Save only on explicit Enter; Esc cancels. blur-commit was removed (v61) because random
+// outside clicks would silently trigger a rename — too easy to fat-finger.
 function startInstructorInlineEdit(name, rowEl) {
   const nameSpan = rowEl.querySelector('.trainer-row-name');
   if (!nameSpan) return;
@@ -4598,16 +5970,12 @@ function startInstructorInlineEdit(name, rowEl) {
     if (e.key === 'Enter')      { e.preventDefault(); commitInstructorInlineEdit(name, input); }
     else if (e.key === 'Escape'){ e.preventDefault(); cancelInstructorInlineEdit(input, name, nameSpan); }
   };
-  // Save on blur unless cancelled. Use a flag to distinguish Esc-cancel from blur-commit.
-  input._cancelled = false;
-  input.onblur = () => { if (!input._cancelled) commitInstructorInlineEdit(name, input); };
   nameSpan.replaceWith(input);
   input.focus();
   input.select();
 }
 
 function cancelInstructorInlineEdit(input, oldName, nameSpan) {
-  input._cancelled = true;
   // Re-render is the simplest restore — just rerun the list builder
   renderTrainersList();
 }
@@ -4696,8 +6064,12 @@ async function loadHistory() {
   const tbody = document.getElementById('historyBody');
   tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:30px">Загрузка истории…</td></tr>';
   try {
+    // PostgREST `or` filter: tool_type=current OR tool_type IS NULL. NULL = pre-v62 legacy
+    // entries that were written before the column existed; show them in every tool's history
+    // since we can't tell which tool they belonged to.
+    const filter = `or=(tool_type.eq.${currentTool},tool_type.is.null)`;
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/audit_log?select=action,summary,created_at&order=created_at.desc&limit=500`,
+      `${SUPABASE_URL}/rest/v1/audit_log?select=action,summary,created_at,tool_type&${filter}&order=created_at.desc&limit=500`,
       { headers: SB_HEADERS }
     );
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -4718,13 +6090,13 @@ function renderHistory() {
   if (search) events = events.filter(e => (e.summary||'').toLowerCase().includes(search));
 
   if (!events.length) {
-    tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state"><div class="empty-icon">🕐</div><strong>Нет событий</strong><p>История изменений появится после сохранений</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state"><div class="empty-icon"><i class="ti ti-history"></i></div><strong>Нет событий</strong><p>История изменений появится после сохранений</p></div></td></tr>';
     return;
   }
 
   const actionLabels = {
-    add: '➕ Добавление', update: '✏ Изменение', delete: '🗑 Удаление',
-    restore: '↩ Восстановление', rename: '✏ Переименование', import: '📥 Импорт'
+    add: '<i class="ti ti-plus"></i> Добавление', update: '<i class="ti ti-pencil"></i> Изменение', delete: '<i class="ti ti-trash"></i> Удаление',
+    restore: '<i class="ti ti-arrow-back-up"></i> Восстановление', rename: '<i class="ti ti-pencil"></i> Переименование', import: '<i class="ti ti-download"></i> Импорт'
   };
   const actionBadges = {
     add: 'badge-green', update: 'badge-blue', delete: 'badge-red',
@@ -4739,7 +6111,7 @@ function renderHistory() {
     return `<tr>
       <td class="mono" style="font-size:12px">${dateStr}</td>
       <td><span class="badge ${badge}">${label}</span></td>
-      <td>${e.summary||'—'}</td>
+      <td>${escapeHTML(e.summary||'—')}</td>
     </tr>`;
   }).join('');
 }
@@ -4787,14 +6159,14 @@ function renderTrainersList() {
     const safe = name.replace(/'/g, "\\'");
     const isActive = name === selectedTrainer ? 'active' : '';
     const opacity = isHidden ? 'opacity:0.55' : '';
-    const eyeIcon = isHidden ? '🙈' : '👁';
+    const eyeIcon = isHidden ? '<i class="ti ti-eye-off"></i>' : '<i class="ti ti-eye"></i>';
     const eyeTitle = isHidden ? 'Показать тренера' : 'Скрыть тренера';
     return `<div class="trainer-row ${isActive}" onclick="selectTrainer('${safe}')" style="${opacity}">
-      <span class="trainer-row-name">${name}</span>
+      <span class="trainer-row-name">${escapeHTML(name)}</span>
       <span style="display:inline-flex;align-items:center;gap:8px">
         <span class="trainer-row-count">${cnt}</span>
         <button onclick="event.stopPropagation();toggleInstructorHidden('${safe}')" title="${eyeTitle}" class="trainer-row-icon">${eyeIcon}</button>
-        <button onclick="event.stopPropagation();startInstructorInlineEdit('${safe}', this.closest('.trainer-row'))" title="Переименовать тренера" class="trainer-row-icon">✏</button>
+        <button onclick="event.stopPropagation();startInstructorInlineEdit('${safe}', this.closest('.trainer-row'))" title="Переименовать тренера" class="trainer-row-icon"><i class="ti ti-pencil"></i></button>
       </span>
     </div>`;
   };
@@ -4819,6 +6191,53 @@ function renderTrainersList() {
   list.innerHTML = html;
 }
 
+// Persisted trainer-filter state. Per (tool, trainer-name) tuple; survives F5 and tool switch.
+// Stored as a single localStorage key with a JSON map: { "vr|Иванов": {...}, "welder|...": {...} }
+const TRAINER_FILTERS_KEY = 'vr_trainer_filters_v1';
+function trainerFiltersAll() {
+  try { return JSON.parse(localStorage.getItem(TRAINER_FILTERS_KEY) || '{}'); }
+  catch { return {}; }
+}
+function trainerFilterKey(name) { return `${currentTool}|${name}`; }
+function saveTrainerFilters() {
+  if (!selectedTrainer) return;
+  const state = {
+    year:       document.getElementById('t_filterYear')?.value || '',
+    month:      document.getElementById('t_filterMonth')?.value || '',
+    dateExact:  document.getElementById('t_dateExact')?.value || '',
+    dateFrom:   document.getElementById('t_dateFrom')?.value || '',
+    dateTo:     document.getElementById('t_dateTo')?.value || '',
+    rangeMode:  document.getElementById('t_dateFilterRange')?.style.display !== 'none',
+    enterprises: getChipMultiValues('t_enterprise')
+  };
+  const all = trainerFiltersAll();
+  all[trainerFilterKey(selectedTrainer)] = state;
+  try { localStorage.setItem(TRAINER_FILTERS_KEY, JSON.stringify(all)); }
+  catch { /* quota — silently drop, filters just won't survive next F5 */ }
+}
+function restoreTrainerFilters() {
+  if (!selectedTrainer) return;
+  const all = trainerFiltersAll();
+  const state = all[trainerFilterKey(selectedTrainer)];
+  if (!state) return;
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+  setVal('t_filterYear', state.year);
+  setVal('t_filterMonth', state.month);
+  setVal('t_dateExact', state.dateExact);
+  setVal('t_dateFrom', state.dateFrom);
+  setVal('t_dateTo', state.dateTo);
+  if (state.rangeMode) toggleTrainerDateRange(true);
+  // Chip-multi: container exists (just rendered), push values into its state directly
+  if (Array.isArray(state.enterprises) && state.enterprises.length) {
+    const container = document.getElementById('t_enterprise');
+    if (container && chipMultiState.has(container)) {
+      const arr = chipMultiState.get(container);
+      state.enterprises.forEach(v => { if (!arr.includes(v)) arr.push(v); });
+      renderChipMulti(container, refreshTrainerData);
+    }
+  }
+}
+
 function selectTrainer(name) {
   selectedTrainer = name;
   renderTrainersList();
@@ -4837,14 +6256,14 @@ function renderTrainerDetail() {
   detail.innerHTML = `
     <div class="trainer-header">
       <div>
-        <div class="trainer-name">${selectedTrainer}</div>
+        <div class="trainer-name">${escapeHTML(selectedTrainer)}</div>
         <div class="trainer-stats">
           <div class="trainer-stat">Всего обучений: <strong id="t_totalCount">—</strong></div>
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-secondary pdf-hide" onclick="deleteTrainer()" title="Удалить тренера" style="color:var(--red);border-color:var(--red)">🗑 Удалить тренера</button>
-        <button class="btn btn-secondary pdf-hide" onclick="openPDFModal('trainer')">📄 Экспорт в PDF</button>
+        <button class="btn btn-secondary pdf-hide" onclick="deleteTrainer()" title="Удалить тренера" style="color:var(--red);border-color:var(--red)"><i class="ti ti-trash"></i> Удалить тренера</button>
+        <button class="btn btn-secondary pdf-hide" onclick="openPDFModal('trainer')"><i class="ti ti-file-text"></i> Экспорт в PDF</button>
       </div>
     </div>
 
@@ -4852,13 +6271,13 @@ function renderTrainerDetail() {
       <!-- Date filter: single date by default, toggle to range (mirrors journal) -->
       <div id="t_dateFilterSingle" style="display:flex;gap:6px;align-items:center">
         <input type="date" class="filter-select" id="t_dateExact" onchange="refreshTrainerData()" style="min-width:150px" title="Фильтр по дате">
-        <button class="btn btn-secondary btn-sm" onclick="toggleTrainerDateRange(true)" title="Диапазон дат">📅 Диапазон</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleTrainerDateRange(true)" title="Диапазон дат"><i class="ti ti-calendar"></i> Диапазон</button>
       </div>
       <div id="t_dateFilterRange" style="display:none;gap:6px;align-items:center">
         <input type="date" class="filter-select" id="t_dateFrom" onchange="refreshTrainerData()" style="min-width:140px" title="С">
         <span style="color:var(--text3);font-size:12px">—</span>
         <input type="date" class="filter-select" id="t_dateTo" onchange="refreshTrainerData()" style="min-width:140px" title="По">
-        <button class="btn btn-secondary btn-sm" onclick="toggleTrainerDateRange(false)" title="Одна дата">✕</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleTrainerDateRange(false)" title="Одна дата"><i class="ti ti-x"></i></button>
       </div>
       <select class="filter-select" id="t_filterYear" onchange="refreshTrainerData()" style="min-width:110px">
         <option value="">Все годы</option>
@@ -4873,7 +6292,7 @@ function renderTrainerDetail() {
           ${enterprises.map(e => `<option value="${e.replace(/"/g,'&quot;')}">`).join('')}
         </datalist>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="resetTrainerFilters()">✕ Сброс</button>
+      <button class="btn btn-secondary btn-sm" onclick="resetTrainerFilters()"><i class="ti ti-x"></i> Сброс</button>
     </div>
 
     <div class="trainer-charts-row" data-pdf-section="t_charts" data-pdf-label="Графики (по месяцам и предприятиям)">
@@ -4883,7 +6302,7 @@ function renderTrainerDetail() {
       </div>
       <div>
         <div class="trainer-section-title">По предприятиям</div>
-        <div style="position:relative;height:240px"><canvas id="t_chartEnterprises"></canvas></div>
+        <canvas id="t_chartEnterprises"></canvas>
       </div>
     </div>
 
@@ -4918,12 +6337,20 @@ function renderTrainerDetail() {
       yearsForTrainer.map(y => `<option value="${y}">${y}</option>`).join('');
   }
 
+  // Restore persisted filter state for this trainer (per tool). Must happen AFTER the year
+  // dropdown is populated and AFTER chip-multi setup, since restoreTrainerFilters writes
+  // into both.
+  restoreTrainerFilters();
+
   refreshTrainerData();
 }
 
 // Apply trainer filters and re-render charts/tables. Doesn't re-render the shell.
 function refreshTrainerData() {
   if (!selectedTrainer) return;
+
+  // Persist current filter values to localStorage so they survive F5 / tool switch / re-select.
+  saveTrainerFilters();
 
   // Pull values from the journal-style filter row
   const year       = document.getElementById('t_filterYear')?.value || '';
@@ -4940,7 +6367,7 @@ function refreshTrainerData() {
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
     if (dateTo && (!r.date || r.date > dateTo)) return false;
     if (year && recordYear(r) !== year) return false;
-    if (month && r.month !== month) return false;
+    if (month && monthFromDate(r) !== month) return false;
     if (entFilters.length && !entFilters.includes(r.enterprise)) return false;
     return true;
   });
@@ -4978,7 +6405,7 @@ function refreshTrainerData() {
   const coCounts = {};
   recs.forEach(r => { const c = (r.course||'').trim(); if (c) coCounts[c] = (coCounts[c]||0)+1; });
   const coSorted = Object.entries(coCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  renderHTMLBarChart('t_topCourses', coSorted.map(e=>e[0]), coSorted.map(e=>e[1]), '#0b8a94');
+  renderHTMLBarChart('t_topCourses', coSorted.map(e=>e[0]), coSorted.map(e=>e[1]), '#5b4ed1');
 
   // Recent records (last 30) — sorted by date desc, then createdAt desc for stability
   const recent = recs.slice().sort((a, b) => {
@@ -4992,10 +6419,10 @@ function refreshTrainerData() {
   } else {
     tbody.innerHTML = recent.map(r => `<tr>
       <td class="mono">${formatDate(r.date)}</td>
-      <td>${r.enterprise||'—'}</td>
-      <td class="mono">${r.tabNumber||'—'}</td>
-      <td>${r.fullName||'—'}</td>
-      <td>${r.course||'—'}</td>
+      <td>${escapeHTML(r.enterprise||'—')}</td>
+      <td class="mono">${escapeHTML(r.tabNumber||'—')}</td>
+      <td>${escapeHTML(r.fullName||'—')}</td>
+      <td>${escapeHTML(r.course||'—')}</td>
       <td><span class="badge ${(r.completion||0)>=80?'badge-green':(r.completion||0)>=60?'badge-gold':'badge-red'}">${r.completion||0}%</span></td>
     </tr>`).join('');
   }
@@ -5220,9 +6647,84 @@ async function authGate() {
   return true;
 }
 
+// ============================================================
+// TOOL SWITCHER (v57): change active tool, persist choice, reload db.
+// ============================================================
+function updateToolSwitcherUI() {
+  // Header label reflects current tool
+  const lbl = document.getElementById('toolSwitcherLabel');
+  if (lbl) lbl.textContent = TOOL_TYPES[currentTool].short;
+  // Highlight active menu item + show/hide its check icon
+  document.querySelectorAll('#toolMenu .tool-menu-item[data-tool]').forEach(item => {
+    const isActive = item.dataset.tool === currentTool;
+    item.classList.toggle('active', isActive);
+    const check = item.querySelector('.ti-check');
+    if (check) check.style.visibility = isActive ? 'visible' : 'hidden';
+  });
+}
+
+function toggleToolMenu(e) {
+  if (e) e.stopPropagation();
+  const sw = document.getElementById('toolSwitcher');
+  const btn = document.getElementById('toolSwitcherBtn');
+  const open = sw.classList.toggle('open');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function closeToolMenu() {
+  const sw = document.getElementById('toolSwitcher');
+  const btn = document.getElementById('toolSwitcherBtn');
+  if (sw) sw.classList.remove('open');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+// Close dropdown on click outside or Esc
+document.addEventListener('click', e => {
+  const sw = document.getElementById('toolSwitcher');
+  if (!sw || !sw.classList.contains('open')) return;
+  if (!sw.contains(e.target)) closeToolMenu();
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  // Only close the tool menu if it's actually open — otherwise Esc fires here on every
+  // keypress and interferes with other Esc-driven UI (e.g. closing modals, fullscreen QR).
+  const sw = document.getElementById('toolSwitcher');
+  if (sw && sw.classList.contains('open')) closeToolMenu();
+});
+
+async function switchTool(tool) {
+  closeToolMenu();
+  if (!TOOL_TYPES[tool] || tool === currentTool) return;
+  // Pause background polling for the duration of the switch. Without this, a poll that fires
+  // after currentTool is reassigned (line below) but before loadDB finishes would fetch with
+  // the new tool, compare against baseSnapshot that's still for the old tool, see a "diff",
+  // and overwrite db with a partial mid-switch state. Restart the timer once loadDB returns.
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  // Flush unsaved local changes for the current tool before switching
+  if (isDirty) {
+    try { await saveDB({ silent: true }); } catch (e) { console.warn('Pre-switch save failed:', e); }
+  }
+  currentTool = tool;
+  localStorage.setItem('vr_current_tool', tool);
+  updateToolSwitcherUI();
+  // Reset selected trainer — it belongs to the previous tool
+  if (typeof selectedTrainer !== 'undefined') selectedTrainer = null;
+  try {
+    await loadDB();
+  } finally {
+    // Always restart polling, even if loadDB threw — otherwise the user gets stuck with no
+    // background sync until they refresh the page.
+    pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
+  }
+}
+
 // Extracted from DOMContentLoaded so it can run either immediately (already authed) or
 // after successful login.
 async function startApp() {
+  // Restore last-used tool from localStorage (default 'vr')
+  const savedTool = localStorage.getItem('vr_current_tool');
+  if (savedTool && TOOL_TYPES[savedTool]) currentTool = savedTool;
+  updateToolSwitcherUI();
   // Env badge — visible only in test mode so test stand can't be confused with prod
   if (CURRENT_ENV === 'test') {
     const badge = document.getElementById('envBadge');
@@ -5252,7 +6754,7 @@ async function startApp() {
 
   // Auto-load database from Supabase
   if (SUPABASE_URL.startsWith('https://YOUR-')) {
-    setFileStatus('red', '❌ Supabase не настроен');
+    setFileStatus('red', 'Supabase не настроен');
     toast('Откройте HTML в редакторе и впишите ваши SUPABASE_URL и SUPABASE_KEY', 'error');
     return;
   }
