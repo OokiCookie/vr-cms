@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Журнал обучений</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%93%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -1443,10 +1444,10 @@ tbody tr:hover td { background: var(--card2); }
         <i class="ti ti-chevron-down chev" aria-hidden="true"></i>
       </button>
       <div class="tool-menu" id="toolMenu" role="menu">
-        <div class="tool-menu-item disabled" role="menuitem">
+        <div class="tool-menu-item" role="menuitem" data-tool="summary" onclick="enterSummaryMode()">
           <i class="ti ti-chart-pie" aria-hidden="true"></i>
           <span>Общая сводка</span>
-          <span class="soon-badge">Скоро</span>
+          <i class="ti ti-check" aria-hidden="true" style="visibility:hidden"></i>
         </div>
         <div class="tool-menu-item active" role="menuitem" data-tool="vr" onclick="switchTool('vr')">
           <i class="ti ti-headset" aria-hidden="true"></i>
@@ -1527,26 +1528,28 @@ tbody tr:hover td { background: var(--card2); }
       <div class="kpi-card">
         <div class="kpi-label"><span class="kpi-ic ic-indigo"><i class="ti ti-users"></i></span>Всего обучено</div>
         <div class="kpi-value" id="kpiTotal">0</div>
-        <div class="kpi-sub">записей в базе</div>
+        <div class="kpi-sub" id="kpiTotalSub">записей в базе</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label"><span class="kpi-ic ic-green"><i class="ti ti-calendar-event"></i></span>Текущий месяц</div>
         <div class="kpi-value" id="kpiMonth">0</div>
         <div class="kpi-sub" id="kpiMonthLabel">—</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-label"><span class="kpi-ic ic-amber"><i class="ti ti-target"></i></span>Средний % курса</div>
-        <div class="kpi-value"><span id="kpiAvg">0</span><span class="kpi-unit">%</span></div>
-        <div class="kpi-sub">по всем курсам за период</div>
+      <div class="kpi-card" id="kpiAvgCard">
+        <div class="kpi-label"><span class="kpi-ic ic-amber"><i class="ti ti-target" id="kpiAvgIcon"></i></span><span id="kpiAvgTitle">Средний % курса</span></div>
+        <div class="kpi-value"><span id="kpiAvg">0</span><span class="kpi-unit" id="kpiAvgUnit">%</span></div>
+        <div class="kpi-sub" id="kpiAvgSub">по всем курсам за период</div>
       </div>
     </div>
+    <!-- Tool breakdown cards — visible only in summary mode -->
+    <div id="toolBreakdown" class="kpi-row-3" data-pdf-section="toolBreakdown" data-pdf-label="По инструментам" style="display:none;margin-top:14px"></div>
     <div class="charts-row">
       <div class="chart-card" data-pdf-section="chartMonths" data-pdf-label="График по месяцам">
         <div class="chart-title" id="chartMonthsTitle"><span class="kpi-ic ic-indigo"><i class="ti ti-chart-bar"></i></span>Обучено по месяцам</div>
         <canvas id="chartMonths"></canvas>
       </div>
       <div class="chart-card" data-pdf-section="chartEnterprises" data-pdf-label="График по предприятиям">
-        <div class="chart-title"><span class="kpi-ic ic-teal"><i class="ti ti-building-factory"></i></span>По предприятиям</div>
+        <div class="chart-title"><span class="kpi-ic ic-teal"><i class="ti ti-building-factory"></i></span><span id="chartEnterprisesTitle">По предприятиям</span></div>
         <canvas id="chartEnterprises"></canvas>
       </div>
     </div>
@@ -2255,12 +2258,41 @@ let currentTool = 'vr';
 function currentDbStateId() { return TOOL_TYPES[currentTool].dbStateId; }
 
 // ============================================================
+// SUMMARY MODE (v63): cross-tool read-only aggregated view.
+// When active, dashboard and trainers tab show data across all tools combined.
+// All mutations are disabled; record-writing tabs are hidden in the nav.
+// `currentTool` keeps its previous value so a tool switch returns to its data
+// without a network reload.
+// ============================================================
+let summaryMode = false;
+let summaryRecords = []; // cross-tool records, populated by loadSummaryDB()
+// Shared accessor used by dashboard/trainers: returns summaryRecords in summary mode,
+// otherwise activeRecords() (per-tool). All non-deleted only.
+function activeRecordsForView() {
+  return summaryMode
+    ? summaryRecords.filter(r => !r.deleted)
+    : activeRecords();
+}
+// Display color per tool — kept in one place so dashboard, breakdown cards and
+// stacked chart all stay in sync.
+const TOOL_COLORS = {
+  vr:     '#378ADD',
+  welder: '#D85A30',
+  other:  '#1D9E75'
+};
+const TOOL_ORDER = ['vr', 'welder']; // tools to show in summary aggregation. Add 'other' when implemented.
+function toolLabel(t) {
+  return (TOOL_TYPES[t] && TOOL_TYPES[t].short) || t;
+}
+
+// ============================================================
 // STATE
 // ============================================================
 let db = { version: '1.0', lastModified: null, records: [] };
 let baseSnapshot = null;     // snapshot of db at last load/save — used to compute our changes during merge
 let isDirty = false;
 let isSaving = false;        // prevents concurrent saves (e.g. autosave timer firing during manual save)
+let isLoading = false;       // true while loadDB is running — blocks backgroundPoll to prevent duplicate records
 let autosaveTimer = null;    // debounce timer for autosave
 let pollTimer = null;        // background poll timer
 const AUTOSAVE_DELAY = 3000; // ms — wait this long after last change before autosaving
@@ -2316,7 +2348,7 @@ function recordYear(r) {
 // Empty array if no records.
 function getYearsFromRecords() {
   const ys = new Set();
-  activeRecords().forEach(r => { const y = recordYear(r); if (y) ys.add(y); });
+  activeRecordsForView().forEach(r => { const y = recordYear(r); if (y) ys.add(y); });
   return [...ys].sort();
 }
 
@@ -2437,7 +2469,7 @@ async function fetchAllRecords() {
   for (let page = 0; page < 50; page++) {
     const to = from + RECORDS_PAGE_SIZE - 1;
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc&tool_type=eq.${currentTool}`,
+      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc,id.asc&tool_type=eq.${currentTool}`,
       { headers: { ...SB_HEADERS, 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
     );
     if (!res.ok) throw new Error('fetchAllRecords HTTP ' + res.status);
@@ -2447,11 +2479,43 @@ async function fetchAllRecords() {
     if (rows.length < RECORDS_PAGE_SIZE) break; // last page
     from += RECORDS_PAGE_SIZE;
   }
+  // Deduplicate by id — guard against boundary duplicates when Supabase returns
+  // the same row at the end of one page and the start of the next (unstable sort).
+  const seen = new Set();
+  return all.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
+}
+
+// Cross-tool variant: fetch records from ALL tools (no tool_type filter).
+// Used only by summary mode. Returns a flat array; consumers group by `toolType`.
+async function fetchAllRecordsAcrossTools() {
+  const all = [];
+  let from = 0;
+  for (let page = 0; page < 50; page++) {
+    const to = from + RECORDS_PAGE_SIZE - 1;
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc`,
+      { headers: { ...SB_HEADERS, 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
+    );
+    if (!res.ok) throw new Error('fetchAllRecordsAcrossTools HTTP ' + res.status);
+    const rows = await res.json();
+    if (!rows.length) break;
+    all.push(...rows.map(recordFromDB));
+    if (rows.length < RECORDS_PAGE_SIZE) break;
+    from += RECORDS_PAGE_SIZE;
+  }
   return all;
+}
+
+// Guard for record-mutating functions. In summary mode, all writes are forbidden:
+// the UI hides mutation controls, but defense-in-depth catches any stray code path
+// (autosave timers, deferred callbacks, console calls) that bypassed the UI guards.
+function assertNotSummary(op) {
+  if (summaryMode) throw new Error('Summary mode is read-only (' + op + ')');
 }
 
 // Insert a single record into the `records` table.
 async function insertRecord(rec) {
+  assertNotSummary('insertRecord');
   const res = await fetch(`${SUPABASE_URL}/rest/v1/records`, {
     method: 'POST',
     headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
@@ -2462,6 +2526,7 @@ async function insertRecord(rec) {
 
 // Insert multiple records in a single POST. Used for group entry, Excel import, migration.
 async function insertRecordsBatch(records) {
+  assertNotSummary('insertRecordsBatch');
   if (!records.length) return;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/records`, {
     method: 'POST',
@@ -2473,6 +2538,7 @@ async function insertRecordsBatch(records) {
 
 // Update specific fields of a record. `patch` is in camelCase; converted to snake_case here.
 async function updateRecord(id, patch) {
+  assertNotSummary('updateRecord');
   // Build snake_case patch
   const snakePatch = {};
   if ('deleted' in patch)    snakePatch.deleted    = patch.deleted;
@@ -2498,6 +2564,7 @@ async function updateRecord(id, patch) {
 
 // Permanently delete one record from the `records` table.
 async function deleteRecordRow(id) {
+  assertNotSummary('deleteRecordRow');
   const res = await fetch(`${SUPABASE_URL}/rest/v1/records?id=eq.${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' }
@@ -2508,6 +2575,7 @@ async function deleteRecordRow(id) {
 // Permanently delete many records in a single DELETE call (using PostgREST `id=in.(...)` filter).
 // Keeps the URL under typical limits by chunking IDs into groups of 100.
 async function deleteRecordsBatch(ids) {
+  assertNotSummary('deleteRecordsBatch');
   if (!ids.length) return;
   const CHUNK = 100;
   for (let i = 0; i < ids.length; i += CHUNK) {
@@ -2527,6 +2595,7 @@ async function deleteRecordsBatch(ids) {
 // `scoped` (default true) restricts PATCH to the current tool. Enterprises are shared
 // across tools, so renameEnterprise calls this with scoped=false.
 async function updateRecordsByField(column, oldValue, newValue, { scoped = true } = {}) {
+  assertNotSummary('updateRecordsByField');
   const toolFilter = scoped ? `&tool_type=eq.${currentTool}` : '';
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/records?${column}=eq.${encodeURIComponent(oldValue)}${toolFilter}`,
@@ -2684,6 +2753,7 @@ async function fetchCloudDB() {
 
 // Load DB state from Supabase. Called on page load and on manual refresh.
 async function loadDB() {
+  isLoading = true;
   setFileStatus('yellow', 'Загрузка из облака…');
   try {
     db = await fetchCloudDB();
@@ -2777,6 +2847,8 @@ async function loadDB() {
     toast('Ошибка загрузки: ' + e.message, 'error');
     document.getElementById('saveBtn').disabled = true;
     return false;
+  } finally {
+    isLoading = false;
   }
 }
 
@@ -2985,6 +3057,14 @@ function mergeDB(cloud, base, ours) {
 async function saveDB(opts = {}) {
   const silent = opts.silent === true; // suppress toast for autosave
 
+  // Summary mode is read-only — no per-tool db_state to save into.
+  // This guard protects against any code path that might trigger saveDB indirectly
+  // (autosave timer firing right after summary mode entry, etc.).
+  if (summaryMode) {
+    if (!silent) toast('Сводка — режим только просмотра', 'info');
+    return;
+  }
+
   if (!isDirty) {
     if (!silent) toast('Нет изменений для сохранения', 'success');
     return;
@@ -3103,6 +3183,12 @@ async function saveDB(opts = {}) {
 
 // Manual refresh — reload from cloud. Warns if local changes would be lost.
 async function reloadDB() {
+  if (summaryMode) {
+    // In summary mode, "reload" means re-fetch the cross-tool snapshot.
+    await loadSummaryDB();
+    toast('Сводка перезагружена', 'success');
+    return;
+  }
   if (isDirty && !confirm('Есть несохранённые изменения. Перезагрузить из облака? Локальные изменения будут потеряны.')) return;
   await loadDB();
   toast('База перезагружена из облака', 'success');
@@ -3111,7 +3197,12 @@ async function reloadDB() {
 // Background poll — quietly pull latest cloud version every POLL_INTERVAL ms.
 // Skips if user has unsaved changes (don't clobber their work).
 async function backgroundPoll() {
-  if (isDirty || isSaving || document.hidden) return;
+  if (isDirty || isSaving || isLoading || document.hidden) return;
+  // In summary mode the background poll exists but doesn't read db_state — there's no
+  // per-tool state to refresh. Skip it: the user can manually press "Обновить" to reload
+  // summaryRecords. Auto-refresh of summary cross-tool data is not implemented to avoid
+  // extra full-table fetches on every interval.
+  if (summaryMode) return;
   // Pin the tool we're polling for. fetchCloudDB reads currentTool internally; if the user
   // switches tools mid-poll, the cloud snapshot we get back will be for the wrong tool and
   // applying it to `db` would overwrite the just-loaded data for the new tool.
@@ -3124,6 +3215,9 @@ async function backgroundPoll() {
     if (isDirty || isSaving) return;
     // Same idea for tool: if currentTool changed while we were waiting, discard this snapshot.
     if (currentTool !== polledTool) return;
+    // Also: if user entered summary mode while we were fetching, drop the snapshot — we're
+    // not displaying per-tool data right now and applying it would be wasted work.
+    if (summaryMode) return;
     const cloudStr = JSON.stringify(cloud);
     const baseStr  = baseSnapshot ? JSON.stringify(baseSnapshot) : null;
     if (cloudStr === baseStr) return; // no remote changes
@@ -3147,6 +3241,9 @@ function setFileStatus(color, text) {
 // Called by every mutation (addRecord, deleteRecord, import, rename, etc).
 // Marks dirty + schedules autosave.
 function markDirty() {
+  // Summary mode is read-only — no path through here should fire, but if it does
+  // (e.g. legacy code path we missed), don't corrupt state. Just no-op.
+  if (summaryMode) return;
   isDirty = true;
   document.getElementById('saveBtn').disabled = false;
   setFileStatus('yellow', 'Есть несохранённые изменения');
@@ -3479,19 +3576,24 @@ function refreshAll() {
   populateYearSelectors(); // keep year dropdowns in sync with current data set
   updateKPIs();
   updateCharts();
-  renderRecentInput();
-  filterRecords();
-  updateFilterOptions();
-  updateAutocompleteLists();
-  const active = activeRecords();
-  const trashed = db.records.filter(r => r.deleted);
-  document.getElementById('journalCount').textContent = active.length;
+  if (!summaryMode) {
+    // These render per-tool-only tabs (input/journal). In summary mode those tabs
+    // are hidden, so rendering them is wasted work and could read from db.records
+    // for a tool that doesn't match what's shown.
+    renderRecentInput();
+    filterRecords();
+    updateFilterOptions();
+    updateAutocompleteLists();
+  }
+  const activeView = activeRecordsForView();
+  const trashed = summaryMode ? [] : db.records.filter(r => r.deleted);
+  document.getElementById('journalCount').textContent = activeView.length;
   document.getElementById('trashCount').textContent = trashed.length;
   document.getElementById('trainersCount').textContent = getAllTrainers().length;
-  const noData = active.length === 0;
+  const noData = activeView.length === 0;
   document.getElementById('noDataMsg').style.display = noData ? 'flex' : 'none';
   // Refresh trash/trainers views if they are currently visible
-  if (document.getElementById('tab-trash').classList.contains('active')) renderTrash();
+  if (!summaryMode && document.getElementById('tab-trash').classList.contains('active')) renderTrash();
   if (document.getElementById('tab-trainers').classList.contains('active')) {
     renderTrainersList();
     if (selectedTrainer) refreshTrainerData();
@@ -3500,24 +3602,58 @@ function refreshAll() {
 
 function updateKPIs() {
   // Apply dashboard year filter to all KPIs and breakdown
-  const recs = filterByDashboardYear(activeRecords());
+  const recs = filterByDashboardYear(activeRecordsForView());
   document.getElementById('kpiTotal').textContent = recs.length.toLocaleString('ru');
-  // Average completion % across the filtered records (new KPI card on the dashboard).
+  // Average completion % across the filtered records (per-tool KPI card).
   const completionVals = recs.map(r => Number(r.completion)).filter(v => !isNaN(v));
   const avg = completionVals.length
     ? Math.round(completionVals.reduce((s, v) => s + v, 0) / completionVals.length)
     : 0;
+  // The third KPI card is dual-purpose: per-tool shows avg completion %,
+  // summary shows avg records per active month (a cross-tool baseline that makes sense
+  // unlike avg %, which mixes incompatible scales).
   const avgEl = document.getElementById('kpiAvg');
-  if (avgEl) avgEl.textContent = avg;
+  const titleEl = document.getElementById('kpiAvgTitle');
+  const unitEl = document.getElementById('kpiAvgUnit');
+  const subEl = document.getElementById('kpiAvgSub');
+  const iconEl = document.getElementById('kpiAvgIcon');
+  if (summaryMode) {
+    // Count records per month (only months with at least one record), then average.
+    // We divide by activeMonths, not 12 — otherwise a year that's only 3 months in
+    // would be artificially low.
+    const perMonth = {};
+    recs.forEach(r => { const m = monthFromDate(r); if (m) perMonth[m] = (perMonth[m]||0)+1; });
+    const monthsWithData = Object.keys(perMonth).length;
+    const avgPerMonth = monthsWithData
+      ? Math.round(recs.length / monthsWithData)
+      : 0;
+    if (avgEl) avgEl.textContent = avgPerMonth;
+    if (titleEl) titleEl.textContent = 'Средний в месяц';
+    if (unitEl) unitEl.textContent = '';
+    if (subEl) subEl.textContent = monthsWithData
+      ? `по ${monthsWithData} ${monthsWithData === 1 ? 'месяцу' : 'месяцам'} с данными`
+      : 'нет данных';
+    if (iconEl) iconEl.className = 'ti ti-calendar-stats';
+  } else {
+    if (avgEl) avgEl.textContent = avg;
+    if (titleEl) titleEl.textContent = 'Средний % курса';
+    if (unitEl) unitEl.textContent = '%';
+    if (subEl) subEl.textContent = 'по всем курсам за период';
+    if (iconEl) iconEl.className = 'ti ti-target';
+  }
+  // Card is always visible now — content swaps per mode, layout stays stable.
+  const totalSub = document.getElementById('kpiTotalSub');
+  if (totalSub) totalSub.textContent = summaryMode ? 'по всем инструментам' : 'записей в базе';
   const now = new Date();
   const curMonth = MONTHS[now.getMonth()];
   const curYear  = String(now.getFullYear());
   // "Текущий месяц" must match BOTH month and year — otherwise records from the same month
   // in a different year would be counted in (e.g. May 2025 records in May 2026 KPI).
-  const thisMonth = activeRecords().filter(r => monthFromDate(r) === curMonth && recordYear(r) === curYear).length;
+  const thisMonth = activeRecordsForView().filter(r => monthFromDate(r) === curMonth && recordYear(r) === curYear).length;
   document.getElementById('kpiMonth').textContent = thisMonth;
   document.getElementById('kpiMonthLabel').textContent = curMonth + ' ' + curYear;
   renderInstructorBreakdown(recs);
+  renderToolBreakdown(); // no-op in per-tool mode (block stays hidden)
 }
 
 function renderInstructorBreakdown(recs) {
@@ -3555,6 +3691,58 @@ function renderInstructorBreakdown(recs) {
   }).join('');
 }
 
+// Tool breakdown cards — visible only in summary mode. Shows per-tool totals and "this month".
+// Year filter is applied to "всего" (consistent with kpiTotal). "В мае" is always current month/year.
+function renderToolBreakdown() {
+  const el = document.getElementById('toolBreakdown');
+  if (!el) return;
+  if (!summaryMode) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  const recs = filterByDashboardYear(activeRecordsForView());
+  const now = new Date();
+  const curMonth = MONTHS[now.getMonth()];
+  const curYear  = String(now.getFullYear());
+  const grandTotal = recs.length || 1;
+  const realCards = TOOL_ORDER.map(t => {
+    const toolRecs = recs.filter(r => r.toolType === t);
+    const totalCount = toolRecs.length;
+    const monthCount = activeRecordsForView().filter(r =>
+      r.toolType === t && monthFromDate(r) === curMonth && recordYear(r) === curYear
+    ).length;
+    const pct = Math.round(totalCount / grandTotal * 100);
+    const color = TOOL_COLORS[t] || '#888';
+    const label = toolLabel(t);
+    return `<div class="kpi-card" style="border-left:3px solid ${color}">
+      <div class="kpi-label">
+        <span class="kpi-ic" style="background:${color}1A;color:${color}"><i class="ti ti-tool"></i></span>
+        ${escapeHTML(label)}
+        <span style="margin-left:auto;font-size:11px;color:var(--text3);font-weight:500">${pct}%</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:18px;margin-top:6px">
+        <div>
+          <div class="kpi-value" style="font-size:24px">${totalCount.toLocaleString('ru')}</div>
+          <div class="kpi-sub">всего</div>
+        </div>
+        <div style="border-left:1px solid var(--border);padding-left:18px">
+          <div class="kpi-value" style="font-size:18px;font-weight:500">${monthCount}</div>
+          <div class="kpi-sub">в этом месяце</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  // Placeholder for the third tool slot — visually communicates "future content"
+  // so the empty space doesn't look like a layout bug.
+  const placeholder = `<div class="kpi-card" style="border-left:3px solid var(--border2);opacity:0.65;background:var(--card2)">
+    <div class="kpi-label">
+      <span class="kpi-ic" style="background:var(--card);color:var(--text3)"><i class="ti ti-tools"></i></span>
+      Прочие тренажёры
+      <span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius2)">скоро</span>
+    </div>
+    <div class="kpi-sub" style="margin-top:14px">пока не подключены</div>
+  </div>`;
+  el.innerHTML = realCards + placeholder;
+}
+
 // Pure HTML/CSS bar chart — full control over label wrapping and spacing
 function renderHTMLBarChart(containerId, labels, data, color) {
   const el = document.getElementById(containerId);
@@ -3580,22 +3768,43 @@ function renderHTMLBarChart(containerId, labels, data, color) {
 
 function updateCharts() {
   // All dashboard charts respect the year filter. Pick year from selector.
-  const recs = filterByDashboardYear(activeRecords());
+  const recs = filterByDashboardYear(activeRecordsForView());
   // Update months chart title to indicate the period
   const titleEl = document.getElementById('chartMonthsTitle');
   if (titleEl) {
-    titleEl.textContent = selectedDashboardYear === 'all'
-      ? 'Обучено по месяцам (все годы)'
-      : `Обучено по месяцам · ${selectedDashboardYear}`;
+    const yearPart = selectedDashboardYear === 'all' ? '(все годы)' : `· ${selectedDashboardYear}`;
+    titleEl.textContent = summaryMode
+      ? `Обучено по месяцам ${yearPart}`
+      : `Обучено по месяцам ${yearPart}`;
   }
-  // Monthly chart — stacked by enterprise (top-8 + "Прочие")
-  updateStackedBarChart('chartMonths', recs);
+  // Monthly chart — in summary mode stacked by tool_type, else by enterprise
+  if (summaryMode) {
+    updateStackedBarChartByTool('chartMonths', recs);
+  } else {
+    updateStackedBarChart('chartMonths', recs);
+  }
 
-  // Enterprise donut
-  const entCounts = {};
-  recs.forEach(r => { entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
-  const entSorted = Object.entries(entCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  updateDonut('chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]));
+  // Right-side donut: tool share in summary mode, enterprises in per-tool mode
+  const donutTitleEl = document.getElementById('chartEnterprisesTitle');
+  if (donutTitleEl) donutTitleEl.textContent = summaryMode ? 'По тренажёрам' : 'По предприятиям';
+  if (summaryMode) {
+    const counts = TOOL_ORDER.map(t => ({
+      label: toolLabel(t),
+      val: recs.filter(r => r.toolType === t).length,
+      color: TOOL_COLORS[t] || '#888'
+    })).filter(x => x.val > 0);
+    updateDonut('chartEnterprises',
+      counts.map(c => c.label),
+      counts.map(c => c.val),
+      undefined,
+      counts.map(c => c.color)
+    );
+  } else {
+    const entCounts = {};
+    recs.forEach(r => { entCounts[r.enterprise] = (entCounts[r.enterprise]||0)+1; });
+    const entSorted = Object.entries(entCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    updateDonut('chartEnterprises', entSorted.map(e=>e[0]), entSorted.map(e=>e[1]));
+  }
 
   // Top courses – wrap long labels into multiple lines for Chart.js
   const coCounts = {};
@@ -3717,14 +3926,81 @@ function updateStackedBarChart(id, recs, chartsObj) {
   });
 }
 
-// Renders a Chart.js doughnut. Tooltip shows "Label: count (percent%)".
+// Summary-mode variant: stack months chart by tool_type (VR / Soldamatic / ...).
+// Mirrors updateStackedBarChart but groups by tool instead of enterprise.
+function updateStackedBarChartByTool(id, recs) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id)?.getContext('2d');
+  if (!ctx) return;
+
+  const matrix = {};
+  MONTHS.forEach(m => {
+    matrix[m] = {};
+    TOOL_ORDER.forEach(t => matrix[m][t] = 0);
+  });
+  recs.forEach(r => {
+    const m = monthFromDate(r);
+    if (!m || !TOOL_ORDER.includes(r.toolType)) return;
+    matrix[m][r.toolType]++;
+  });
+
+  const datasets = TOOL_ORDER.map(t => ({
+    label: toolLabel(t),
+    data: MONTHS.map(m => matrix[m][t]),
+    backgroundColor: TOOL_COLORS[t] || '#888',
+    borderWidth: 0,
+  })).filter(ds => ds.data.some(v => v > 0));
+
+  // Same totals-above-bars plugin as enterprise version
+  const totalsPlugin = {
+    id: 'stackedBarTotalsByTool',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea || !scales.x || !scales.y) return;
+      const totals = MONTHS.map((_, monthIdx) =>
+        chart.data.datasets.reduce((sum, ds) => sum + (ds.data[monthIdx] || 0), 0)
+      );
+      ctx.save();
+      ctx.fillStyle = '#5a5040';
+      ctx.font = 'bold 11px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      totals.forEach((total, i) => {
+        if (total === 0) return;
+        const x = scales.x.getPixelForValue(i);
+        const y = scales.y.getPixelForValue(total);
+        ctx.fillText(String(total), x, y - 4);
+      });
+      ctx.restore();
+    }
+  };
+
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: MONTHS, datasets },
+    plugins: [totalsPlugin],
+    options: {
+      layout: { padding: { top: 16 } },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
+        tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}` } }
+      },
+      scales: {
+        x: { stacked: true, grid: { color: '#e6e8ef', drawBorder: false }, ticks: { color: '#9ca0b3', font: { family: 'JetBrains Mono', size: 11 } } },
+        y: { stacked: true, grid: { color: '#e6e8ef', drawBorder: false }, ticks: { color: '#9ca0b3', font: { family: 'JetBrains Mono', size: 11 } } }
+      },
+      responsive: true, maintainAspectRatio: false
+    }
+  });
+}
 // `chartsObj` is the dict where the Chart instance is stored (charts or trainerCharts).
-function updateDonut(id, labels, data, chartsObj) {
+// `customColors` optionally overrides the default palette (used in summary mode for tool colors).
+function updateDonut(id, labels, data, chartsObj, customColors) {
   const dict = chartsObj || charts;
   if (dict[id]) dict[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
   if (!ctx) return;
-  const colors = ['#5b4ed1','#2dadb5','#d9a432','#15a571','#e85a6d','#9968e3','#f08648','#84cc16'];
+  const colors = customColors || ['#5b4ed1','#2dadb5','#d9a432','#15a571','#e85a6d','#9968e3','#f08648','#84cc16'];
   const total = data.reduce((a,b) => a + b, 0) || 1;
   dict[id] = new Chart(ctx, {
     type: 'doughnut',
@@ -4326,9 +4602,29 @@ function importJSON(event) {
         toast('Неверный формат JSON — не найдено поле "records"', 'error');
         document.getElementById('importPreview').style.display='none'; return;
       }
-      const existingIds = new Set(db.records.map(r => r.id));
-      const newRecs = imported.records.filter(nr => nr.id && !existingIds.has(nr.id));
-      const dupCount = imported.records.length - newRecs.length;
+      // Fetch ALL occupied IDs from the records table (no tool_type filter) so we don't
+      // collide with records of other tools that aren't loaded into db.records right now.
+      showImportProgress('Проверяем ID в облаке…', 50);
+      let allCloudIds = new Set(db.records.map(r => r.id));
+      try {
+        const idsRes = await fetch(`${SUPABASE_URL}/rest/v1/records?select=id`, { headers: SB_HEADERS });
+        if (idsRes.ok) {
+          const idsRows = await idsRes.json();
+          idsRows.forEach(row => allCloudIds.add(row.id));
+        }
+      } catch (e) {
+        console.warn('importJSON: could not fetch all cloud IDs, falling back to local:', e.message);
+      }
+      const newRecs = imported.records.filter(nr => nr.id).map(nr => {
+        if (allCloudIds.has(nr.id)) {
+          const newId = generateId();
+          allCloudIds.add(newId);
+          return { ...nr, id: newId };
+        }
+        allCloudIds.add(nr.id);
+        return nr;
+      });
+      const dupCount = imported.records.length - imported.records.filter(nr => nr.id).length;
       // Normalize entity fields on every imported record. JSON exports from older versions
       // or from other tools may contain trailing whitespace / mixed case that would otherwise
       // sneak past the ref-book dedup.
@@ -4377,7 +4673,7 @@ function importJSON(event) {
         ['Файл', file.name],
         ['Всего записей в файле', imported.records.length],
         ['Добавлено новых', newRecs.length],
-        ['Пропущено дублей', dupCount],
+        ['Пропущено (нет ID)', dupCount],
         ['Итого в базе', db.records.length],
       ]);
       toast(`Импортировано ${newRecs.length} записей`, 'success');
@@ -6125,14 +6421,16 @@ let trainerCharts = {};           // Chart.js instances for trainer page
 // Build sorted list of all trainers who have records, by count desc then alphabetically.
 function getAllTrainers() {
   const counts = {};
-  activeRecords().forEach(r => {
+  activeRecordsForView().forEach(r => {
     const name = (r.instructor||'').trim();
     if (name) counts[name] = (counts[name]||0) + 1;
   });
-  // Only return trainers who actually have records. Orphans in db.instructors (e.g. after
-  // backup restore) are not shown — they have nothing meaningful on a card.
+  // In per-tool mode: filter by db.hiddenInstructors (a per-tool flag).
+  // In summary mode: show all trainers — hidden is per-tool and would be ambiguous
+  // (a trainer hidden in VR might still be active in Soldamatic). Showing all keeps
+  // the summary an honest cross-tool view; users manage hide/show on per-tool tabs.
   return Object.entries(counts)
-    .filter(([name]) => !isInstructorHidden(name))
+    .filter(([name]) => summaryMode ? true : !isInstructorHidden(name))
     .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
 }
 
@@ -6145,28 +6443,33 @@ function renderTrainersList() {
   // We can't get them from getAllTrainers (it filters hidden out), so compute fresh.
   // Only trainers with actual records appear — orphans from db.instructors (e.g. after
   // backup restore) aren't shown.
+  // In summary mode there is no per-tool hidden list to show; skip the hidden block entirely.
   const hiddenCounts = {};
-  activeRecords().forEach(r => {
-    const name = (r.instructor || '').trim();
-    if (name && isInstructorHidden(name)) hiddenCounts[name] = (hiddenCounts[name] || 0) + 1;
-  });
+  if (!summaryMode) {
+    activeRecordsForView().forEach(r => {
+      const name = (r.instructor || '').trim();
+      if (name && isInstructorHidden(name)) hiddenCounts[name] = (hiddenCounts[name] || 0) + 1;
+    });
+  }
   const hidden = Object.entries(hiddenCounts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
 
   // Single row template — used for both visible and hidden lists.
   // Layout: [name | count | 👁 eye | ✏ pencil]. Both icons stop click propagation so
   // they don't trigger selectTrainer.
+  // In summary mode the mutation buttons (eye/pencil) are hidden — trainers are read-only there.
   const renderRow = (name, cnt, isHidden) => {
     const safe = name.replace(/'/g, "\\'");
     const isActive = name === selectedTrainer ? 'active' : '';
     const opacity = isHidden ? 'opacity:0.55' : '';
     const eyeIcon = isHidden ? '<i class="ti ti-eye-off"></i>' : '<i class="ti ti-eye"></i>';
     const eyeTitle = isHidden ? 'Показать тренера' : 'Скрыть тренера';
+    const actions = summaryMode ? '' : `
+        <button onclick="event.stopPropagation();toggleInstructorHidden('${safe}')" title="${eyeTitle}" class="trainer-row-icon">${eyeIcon}</button>
+        <button onclick="event.stopPropagation();startInstructorInlineEdit('${safe}', this.closest('.trainer-row'))" title="Переименовать тренера" class="trainer-row-icon"><i class="ti ti-pencil"></i></button>`;
     return `<div class="trainer-row ${isActive}" onclick="selectTrainer('${safe}')" style="${opacity}">
       <span class="trainer-row-name">${escapeHTML(name)}</span>
       <span style="display:inline-flex;align-items:center;gap:8px">
-        <span class="trainer-row-count">${cnt}</span>
-        <button onclick="event.stopPropagation();toggleInstructorHidden('${safe}')" title="${eyeTitle}" class="trainer-row-icon">${eyeIcon}</button>
-        <button onclick="event.stopPropagation();startInstructorInlineEdit('${safe}', this.closest('.trainer-row'))" title="Переименовать тренера" class="trainer-row-icon"><i class="ti ti-pencil"></i></button>
+        <span class="trainer-row-count">${cnt}</span>${actions}
       </span>
     </div>`;
   };
@@ -6198,7 +6501,13 @@ function trainerFiltersAll() {
   try { return JSON.parse(localStorage.getItem(TRAINER_FILTERS_KEY) || '{}'); }
   catch { return {}; }
 }
-function trainerFilterKey(name) { return `${currentTool}|${name}`; }
+function trainerFilterKey(name) {
+  // In summary mode, filters belong to a different namespace — the trainer's record
+  // set is cross-tool, so a year/enterprise that's valid in summary may not exist
+  // in a single per-tool view. Storing under "summary|" keeps the two worlds separate.
+  const scope = summaryMode ? 'summary' : currentTool;
+  return `${scope}|${name}`;
+}
 function saveTrainerFilters() {
   if (!selectedTrainer) return;
   const state = {
@@ -6249,8 +6558,31 @@ function renderTrainerDetail() {
   if (!selectedTrainer) return;
 
   // Build filter options based on this trainer's records
-  const allTrainerRecs = activeRecords().filter(r => (r.instructor||'').trim() === selectedTrainer);
+  const allTrainerRecs = activeRecordsForView().filter(r => (r.instructor||'').trim() === selectedTrainer);
   const enterprises = [...new Set(allTrainerRecs.map(r => r.enterprise).filter(Boolean))].sort();
+
+  // In summary mode: build per-tool breakdown chips for this trainer.
+  // Shows "VR: 42 · Soldamatic: 7" — gives quick context for cross-tool view.
+  let toolBreakdownChips = '';
+  if (summaryMode) {
+    const perTool = TOOL_ORDER.map(t => ({
+      tool: t,
+      label: toolLabel(t),
+      count: allTrainerRecs.filter(r => r.toolType === t).length,
+      color: TOOL_COLORS[t] || '#888'
+    })).filter(x => x.count > 0);
+    if (perTool.length) {
+      toolBreakdownChips = perTool.map(x => `
+        <div class="trainer-stat" style="display:inline-flex;align-items:center;gap:6px">
+          <span style="width:8px;height:8px;border-radius:2px;background:${x.color};display:inline-block"></span>
+          ${escapeHTML(x.label)}: <strong>${x.count}</strong>
+        </div>`).join('');
+    }
+  }
+
+  // Mutation controls (delete trainer) — hidden in summary mode.
+  const deleteBtn = summaryMode ? '' :
+    `<button class="btn btn-secondary pdf-hide" onclick="deleteTrainer()" title="Удалить тренера" style="color:var(--red);border-color:var(--red)"><i class="ti ti-trash"></i> Удалить тренера</button>`;
 
   // Render shell with filters; data goes in next call
   detail.innerHTML = `
@@ -6259,10 +6591,11 @@ function renderTrainerDetail() {
         <div class="trainer-name">${escapeHTML(selectedTrainer)}</div>
         <div class="trainer-stats">
           <div class="trainer-stat">Всего обучений: <strong id="t_totalCount">—</strong></div>
+          ${toolBreakdownChips}
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-secondary pdf-hide" onclick="deleteTrainer()" title="Удалить тренера" style="color:var(--red);border-color:var(--red)"><i class="ti ti-trash"></i> Удалить тренера</button>
+        ${deleteBtn}
         <button class="btn btn-secondary pdf-hide" onclick="openPDFModal('trainer')"><i class="ti ti-file-text"></i> Экспорт в PDF</button>
       </div>
     </div>
@@ -6328,7 +6661,7 @@ function renderTrainerDetail() {
   setupChipMulti('t_enterprise', refreshTrainerData);
 
   // Populate years dropdown — must happen after render since the select is recreated each time
-  const yearsForTrainer = [...new Set(activeRecords()
+  const yearsForTrainer = [...new Set(activeRecordsForView()
     .filter(r => (r.instructor||'').trim() === selectedTrainer)
     .map(recordYear).filter(Boolean))].sort().reverse();
   const yearSel = document.getElementById('t_filterYear');
@@ -6361,7 +6694,7 @@ function refreshTrainerData() {
   const dateTo     =  rangeMode ? (document.getElementById('t_dateTo')?.value    || '') : '';
   const entFilters = getChipMultiValues('t_enterprise');
 
-  const recs = activeRecords().filter(r => {
+  const recs = activeRecordsForView().filter(r => {
     if ((r.instructor||'').trim() !== selectedTrainer) return false;
     if (dateExact && r.date !== dateExact) return false;
     if (dateFrom && (!r.date || r.date < dateFrom)) return false;
@@ -6651,12 +6984,14 @@ async function authGate() {
 // TOOL SWITCHER (v57): change active tool, persist choice, reload db.
 // ============================================================
 function updateToolSwitcherUI() {
-  // Header label reflects current tool
+  // Header label reflects current tool, or "Общая сводка" in summary mode
   const lbl = document.getElementById('toolSwitcherLabel');
-  if (lbl) lbl.textContent = TOOL_TYPES[currentTool].short;
-  // Highlight active menu item + show/hide its check icon
+  if (lbl) lbl.textContent = summaryMode ? 'Общая сводка' : TOOL_TYPES[currentTool].short;
+  // Highlight active menu item + show/hide its check icon.
+  // In summary mode the "summary" pseudo-item is active; in per-tool mode the real tool is.
   document.querySelectorAll('#toolMenu .tool-menu-item[data-tool]').forEach(item => {
-    const isActive = item.dataset.tool === currentTool;
+    const t = item.dataset.tool;
+    const isActive = summaryMode ? (t === 'summary') : (t === currentTool && !summaryMode);
     item.classList.toggle('active', isActive);
     const check = item.querySelector('.ti-check');
     if (check) check.style.visibility = isActive ? 'visible' : 'hidden';
@@ -6694,15 +7029,31 @@ document.addEventListener('keydown', e => {
 
 async function switchTool(tool) {
   closeToolMenu();
-  if (!TOOL_TYPES[tool] || tool === currentTool) return;
+  if (!TOOL_TYPES[tool]) return;
+  // If we're in summary mode, switching to a real tool always exits summary mode,
+  // even if that tool happens to equal currentTool — currentTool was kept as the
+  // "previous" tool during summary mode, so a no-op return here would leave UI stuck.
+  if (!summaryMode && tool === currentTool) return;
   // Pause background polling for the duration of the switch. Without this, a poll that fires
   // after currentTool is reassigned (line below) but before loadDB finishes would fetch with
   // the new tool, compare against baseSnapshot that's still for the old tool, see a "diff",
   // and overwrite db with a partial mid-switch state. Restart the timer once loadDB returns.
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   // Flush unsaved local changes for the current tool before switching
-  if (isDirty) {
+  if (!summaryMode && isDirty) {
     try { await saveDB({ silent: true }); } catch (e) { console.warn('Pre-switch save failed:', e); }
+  }
+  const wasInSummary = summaryMode;
+  summaryMode = false;
+  summaryRecords = [];
+  applySummaryModeUI(); // unhide tabs, restore admin gear etc.
+  // If we're returning to the SAME tool we were on before summary mode, we don't need
+  // to reload from the network — db.records was preserved untouched.
+  if (wasInSummary && tool === currentTool) {
+    updateToolSwitcherUI();
+    refreshAll();
+    pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
+    return;
   }
   currentTool = tool;
   localStorage.setItem('vr_current_tool', tool);
@@ -6715,6 +7066,84 @@ async function switchTool(tool) {
     // Always restart polling, even if loadDB threw — otherwise the user gets stuck with no
     // background sync until they refresh the page.
     pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
+  }
+}
+
+// ============================================================
+// SUMMARY MODE: enter/exit + cross-tool data loading + UI hiding.
+// ============================================================
+
+// Enter summary (cross-tool) view. Preserves currentTool and db.records untouched
+// so a switch back is instant. Fetches a fresh cross-tool snapshot into summaryRecords.
+async function enterSummaryMode() {
+  closeToolMenu();
+  if (summaryMode) return;
+  // Pause polling — backgroundPoll uses currentTool which we're not changing, but the
+  // poll's job is to keep db.records fresh. In summary mode we look at summaryRecords
+  // instead, so polling against the previous tool's data is just wasted work.
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  // Flush any unsaved per-tool changes BEFORE entering summary — once in summary,
+  // mutations are blocked and isDirty would be stuck.
+  if (isDirty) {
+    try { await saveDB({ silent: true }); } catch (e) { console.warn('Pre-summary save failed:', e); }
+  }
+  summaryMode = true;
+  if (typeof selectedTrainer !== 'undefined') selectedTrainer = null;
+  updateToolSwitcherUI();
+  applySummaryModeUI();
+  // If user is on a now-hidden tab, fall back to dashboard.
+  ensureSummaryAllowedTabActive();
+  await loadSummaryDB();
+}
+
+// Fetch cross-tool records into summaryRecords. Does NOT touch db / db.records.
+async function loadSummaryDB() {
+  setFileStatus('yellow', 'Загрузка сводки…');
+  try {
+    summaryRecords = await fetchAllRecordsAcrossTools();
+    setFileStatus('green', `Общая сводка · ${summaryRecords.length} записей`);
+    refreshAll();
+  } catch (e) {
+    console.error('loadSummaryDB error:', e);
+    setFileStatus('red', 'Ошибка загрузки сводки: ' + e.message);
+    toast('Не удалось загрузить сводку: ' + e.message, 'error');
+  }
+}
+
+// Show/hide nav tabs and header buttons for summary mode.
+// Visible in summary: Dashboard, Trainers, PDF export. Hidden: input/journal/qr/trash/admin gear,
+// Save button. Save is hidden (not just disabled) to make it visually clear no writes happen here.
+function applySummaryModeUI() {
+  const hideTabs = ['input', 'journal', 'qrcourses', 'trash'];
+  document.querySelectorAll('.nav-tab').forEach(t => {
+    const onclick = t.getAttribute('onclick') || '';
+    const match = onclick.match(/switchTab\('(\w+)'/);
+    const tabName = match ? match[1] : null;
+    if (tabName && hideTabs.includes(tabName)) {
+      t.style.display = summaryMode ? 'none' : '';
+    }
+  });
+  // Admin gear (refs/export/history) — hidden in summary
+  const gear = document.getElementById('adminGearTab');
+  if (gear) gear.style.display = summaryMode ? 'none' : '';
+  // Save button — hidden in summary (no writes possible)
+  const saveBtn = document.getElementById('saveBtn');
+  if (saveBtn) saveBtn.style.display = summaryMode ? 'none' : '';
+  // Reload button text/title — make it clear it reloads the summary, not a single tool
+  const reloadBtn = document.querySelector('button[onclick="reloadDB()"]');
+  if (reloadBtn) reloadBtn.title = summaryMode ? 'Перезагрузить сводку' : 'Перезагрузить из облака';
+}
+
+// If summary mode hides the currently-active tab, switch to dashboard.
+function ensureSummaryAllowedTabActive() {
+  if (!summaryMode) return;
+  const allowed = new Set(['dashboard', 'trainers']);
+  const activePane = document.querySelector('.tab-pane.active');
+  const activeId = activePane ? activePane.id.replace('tab-', '') : '';
+  if (!allowed.has(activeId)) {
+    // Find dashboard tab element and activate it
+    const dashTab = document.querySelector('.nav-tab[onclick*="dashboard"]');
+    switchTab('dashboard', dashTab);
   }
 }
 
