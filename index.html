@@ -1459,10 +1459,10 @@ tbody tr:hover td { background: var(--card2); }
           <span>Soldamatic</span>
           <i class="ti ti-check" aria-hidden="true" style="visibility:hidden"></i>
         </div>
-        <div class="tool-menu-item disabled" role="menuitem">
+        <div class="tool-menu-item" role="menuitem" data-tool="other" onclick="switchTool('other')">
           <i class="ti ti-tools" aria-hidden="true"></i>
           <span>Прочие тренажёры</span>
-          <span class="soon-badge">Скоро</span>
+          <i class="ti ti-check" aria-hidden="true" style="visibility:hidden"></i>
         </div>
       </div>
     </div>
@@ -2233,7 +2233,7 @@ const SUPABASE_TEST = {
 
 // Меняй между 'prod' и 'test' для переключения окружения.
 // На GitHub Pages должен быть 'prod'. Локально для тестов — 'test'.
-const CURRENT_ENV = 'prod';
+const CURRENT_ENV = 'prod;
 
 const SUPABASE_URL = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).URL;
 const SUPABASE_KEY = (CURRENT_ENV === 'test' ? SUPABASE_TEST : SUPABASE_PROD).KEY;
@@ -2252,7 +2252,8 @@ const AUTH_SALT = 'vr-cms-erg-2026';
 // ============================================================
 const TOOL_TYPES = {
   vr:     { dbStateId: 1, label: 'VR обучение', short: 'VR' },
-  welder: { dbStateId: 2, label: 'Soldamatic',  short: 'Soldamatic' }
+  welder: { dbStateId: 2, label: 'Soldamatic',  short: 'Soldamatic' },
+  other:  { dbStateId: 3, label: 'Прочие тренажёры', short: 'Прочие' }
 };
 let currentTool = 'vr';
 function currentDbStateId() { return TOOL_TYPES[currentTool].dbStateId; }
@@ -2280,7 +2281,7 @@ const TOOL_COLORS = {
   welder: '#D85A30',
   other:  '#1D9E75'
 };
-const TOOL_ORDER = ['vr', 'welder']; // tools to show in summary aggregation. Add 'other' when implemented.
+const TOOL_ORDER = ['vr', 'welder', 'other']; // tools to show in summary aggregation
 function toolLabel(t) {
   return (TOOL_TYPES[t] && TOOL_TYPES[t].short) || t;
 }
@@ -2469,7 +2470,7 @@ async function fetchAllRecords() {
   for (let page = 0; page < 50; page++) {
     const to = from + RECORDS_PAGE_SIZE - 1;
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc,id.asc&tool_type=eq.${currentTool}`,
+      `${SUPABASE_URL}/rest/v1/records?select=*&order=date.desc&tool_type=eq.${currentTool}`,
       { headers: { ...SB_HEADERS, 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
     );
     if (!res.ok) throw new Error('fetchAllRecords HTTP ' + res.status);
@@ -2479,10 +2480,7 @@ async function fetchAllRecords() {
     if (rows.length < RECORDS_PAGE_SIZE) break; // last page
     from += RECORDS_PAGE_SIZE;
   }
-  // Deduplicate by id — guard against boundary duplicates when Supabase returns
-  // the same row at the end of one page and the start of the next (unstable sort).
-  const seen = new Set();
-  return all.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
+  return all;
 }
 
 // Cross-tool variant: fetch records from ALL tools (no tool_type filter).
@@ -3730,17 +3728,7 @@ function renderToolBreakdown() {
       </div>
     </div>`;
   }).join('');
-  // Placeholder for the third tool slot — visually communicates "future content"
-  // so the empty space doesn't look like a layout bug.
-  const placeholder = `<div class="kpi-card" style="border-left:3px solid var(--border2);opacity:0.65;background:var(--card2)">
-    <div class="kpi-label">
-      <span class="kpi-ic" style="background:var(--card);color:var(--text3)"><i class="ti ti-tools"></i></span>
-      Прочие тренажёры
-      <span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:0.06em;padding:2px 8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius2)">скоро</span>
-    </div>
-    <div class="kpi-sub" style="margin-top:14px">пока не подключены</div>
-  </div>`;
-  el.innerHTML = realCards + placeholder;
+  el.innerHTML = realCards;
 }
 
 // Pure HTML/CSS bar chart — full control over label wrapping and spacing
