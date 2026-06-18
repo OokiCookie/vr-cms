@@ -2048,7 +2048,7 @@ tbody tr:hover td { background: var(--card2); }
         <button class="btn btn-secondary btn-sm" onclick="manualBackupAndRefresh()">+ Создать бэкап вручную</button>
       </div>
       <div style="padding:12px 16px;font-size:12px;color:var(--text3);border-bottom:1px solid var(--border)">
-        Хранится последние <span id="backupsMaxKeep"></span> бэкапов. Автоматический бэкап создаётся раз в неделю при первой загрузке приложения.
+        Хранится последние ${'<span id="backupsMaxKeep"></span>'} бэкапов. Автоматический бэкап создаётся раз в неделю при первой загрузке приложения.
       </div>
       <div class="table-scroll">
         <table>
@@ -3895,6 +3895,7 @@ function updateStackedBarChart(id, recs, chartsObj) {
       plugins: {
         legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
         tooltip: {
+          filter: (item) => item.parsed.y > 0,
           callbacks: {
             // Show count next to enterprise name in tooltip
             label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}`
@@ -3971,7 +3972,7 @@ function updateStackedBarChartByTool(id, recs) {
       layout: { padding: { top: 16 } },
       plugins: {
         legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
-        tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}` } }
+        tooltip: { filter: (item) => item.parsed.y > 0, callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}` } }
       },
       scales: {
         x: { stacked: true, grid: { color: '#e6e8ef', drawBorder: false }, ticks: { color: '#9ca0b3', font: { family: 'JetBrains Mono', size: 11 } } },
@@ -6549,24 +6550,10 @@ function renderTrainerDetail() {
   const allTrainerRecs = activeRecordsForView().filter(r => (r.instructor||'').trim() === selectedTrainer);
   const enterprises = [...new Set(allTrainerRecs.map(r => r.enterprise).filter(Boolean))].sort();
 
-  // In summary mode: build per-tool breakdown chips for this trainer.
-  // Shows "VR: 42 · Soldamatic: 7" — gives quick context for cross-tool view.
-  let toolBreakdownChips = '';
-  if (summaryMode) {
-    const perTool = TOOL_ORDER.map(t => ({
-      tool: t,
-      label: toolLabel(t),
-      count: allTrainerRecs.filter(r => r.toolType === t).length,
-      color: TOOL_COLORS[t] || '#888'
-    })).filter(x => x.count > 0);
-    if (perTool.length) {
-      toolBreakdownChips = perTool.map(x => `
-        <div class="trainer-stat" style="display:inline-flex;align-items:center;gap:6px">
-          <span style="width:8px;height:8px;border-radius:2px;background:${x.color};display:inline-block"></span>
-          ${escapeHTML(x.label)}: <strong>${x.count}</strong>
-        </div>`).join('');
-    }
-  }
+  // In summary mode the per-tool breakdown chips ("VR: 42 · Soldamatic: 7") are
+  // populated by refreshTrainerData() so they track the active filters; here we
+  // just reserve the container.
+  const toolBreakdownChips = summaryMode ? '<span id="t_toolBreakdown"></span>' : '';
 
   // Mutation controls (delete trainer) — hidden in summary mode.
   const deleteBtn = summaryMode ? '' :
@@ -6694,6 +6681,22 @@ function refreshTrainerData() {
   });
 
   document.getElementById('t_totalCount').textContent = recs.length;
+
+  // Per-tool breakdown chips (summary mode) — recomputed from the filtered set
+  // so VR/Soldamatic counts always sum to "Всего обучений".
+  const toolBreakdownEl = document.getElementById('t_toolBreakdown');
+  if (toolBreakdownEl) {
+    const perTool = TOOL_ORDER.map(t => ({
+      label: toolLabel(t),
+      count: recs.filter(r => r.toolType === t).length,
+      color: TOOL_COLORS[t] || '#888'
+    })).filter(x => x.count > 0);
+    toolBreakdownEl.innerHTML = perTool.map(x => `
+      <div class="trainer-stat" style="display:inline-flex;align-items:center;gap:6px">
+        <span style="width:8px;height:8px;border-radius:2px;background:${x.color};display:inline-block"></span>
+        ${escapeHTML(x.label)}: <strong>${x.count}</strong>
+      </div>`).join('');
+  }
 
   // Update trainer months chart title to indicate what period is being shown
   const tTitle = document.getElementById('t_chartMonthsTitle');
