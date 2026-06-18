@@ -850,7 +850,7 @@ select option { background: var(--card2); }
     gap: 10px !important;
     margin-bottom: 14px !important;
   }
-  .kpi-card { padding: 10px 14px !important; }
+  .kpi-card { padding: 10px 14px !important; box-shadow: none !important; }
   .kpi-value { font-size: 24px !important; margin-bottom: 2px !important; }
   .kpi-label { font-size: 10px !important; margin-bottom: 4px !important; }
   .kpi-sub { font-size: 10px !important; }
@@ -877,18 +877,46 @@ select option { background: var(--card2); }
     gap: 10px !important;
     margin-bottom: 12px !important;
   }
-  .trainer-section { margin-top: 14px !important; }
+  .trainer-section { margin-top: 10px !important; }
 
   /* Constrain Chart.js canvas size so it doesn't overflow grid cells in print.
      Chart.js with maintainAspectRatio: true tries to grow canvas to maintain
      aspect ratio; without max-width it can spill past the cell boundary. */
   canvas { max-height: 220px !important; max-width: 100% !important; }
 
-  /* Avoid splitting cards and chart blocks across pages */
-  .chart-card, .kpi-card, .table-wrap,
-  .trainer-section, [data-pdf-section] { break-inside: avoid; page-break-inside: avoid; }
+  /* Don't split compact, atomic blocks: KPI cards and canvas-based charts.
+     But DO allow long list cards (top courses, instructors) to break across
+     pages — otherwise a 14-row list that doesn't fit jumps whole to the next
+     page and leaves the current one half-empty. */
+  .kpi-card,
+  [data-pdf-section="chartMonths"], [data-pdf-section="chartEnterprises"],
+  [data-pdf-section="t_charts"] { break-inside: avoid; page-break-inside: avoid; }
+  /* Keep a chart/list title from being orphaned at the bottom of a page */
+  .chart-title { break-after: avoid; page-break-after: avoid; }
+  /* List rows shouldn't be cut through the middle */
+  .instr-card-row, #chartCourses > div, #t_topCourses > div { break-inside: avoid; }
   /* Tables can wrap, but keep header attached */
   thead { display: table-header-group; }
+
+  /* ---- COMPACT VERTICAL RHYTHM FOR PRINT ----
+     On-screen spacing is tuned for scrolling; on paper it inflates a 2-page
+     report to 5. Tighten margins/padding/gaps for print only. */
+  /* A4 landscape renders at ~1046px wide, which trips the ≤1100px media query
+     that collapses kpi-row-3 to a single column — so all 6 KPI cards stack
+     vertically and eat a whole page. Force them back into 3-up rows. */
+  .kpi-row-3 {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 10px !important;
+    margin-bottom: 10px !important;
+  }
+  #toolBreakdown { margin-top: 10px !important; }
+  .charts-row2 { margin-bottom: 10px !important; }
+  .charts-row { margin-bottom: 10px !important; }
+  .chart-card { box-shadow: none !important; }
+  .instr-card-row { padding: 2px 0 !important; row-gap: 3px !important; }
+  .instr-card-bar { height: 4px !important; }
+  /* Bar rows from renderHTMLBarChart use inline padding:9px — override here */
+  #chartCourses > div, #t_topCourses > div { padding-top: 4px !important; padding-bottom: 4px !important; }
 }
 /* @page rule is set dynamically via <style id="pdfPageStyle"> when user picks orientation */
 </style>
@@ -1461,7 +1489,7 @@ tbody tr:hover td { background: var(--card2); }
         </div>
         <div class="tool-menu-item" role="menuitem" data-tool="other" onclick="switchTool('other')">
           <i class="ti ti-tools" aria-hidden="true"></i>
-          <span>Прочие тренажёры</span>
+          <span>Прочие обучения</span>
           <i class="ti ti-check" aria-hidden="true" style="visibility:hidden"></i>
         </div>
       </div>
@@ -2253,7 +2281,7 @@ const AUTH_SALT = 'vr-cms-erg-2026';
 const TOOL_TYPES = {
   vr:     { dbStateId: 1, label: 'VR обучение', short: 'VR' },
   welder: { dbStateId: 2, label: 'Soldamatic',  short: 'Soldamatic' },
-  other:  { dbStateId: 3, label: 'Прочие тренажёры', short: 'Прочие' }
+  other:  { dbStateId: 3, label: 'Прочие обучения', short: 'Прочие' }
 };
 let currentTool = 'vr';
 function currentDbStateId() { return TOOL_TYPES[currentTool].dbStateId; }
@@ -2315,6 +2343,7 @@ let selectedIds = new Set();
 let charts = {};
 let sortField = 'date';
 let sortDir = 'desc';
+let selectedTrainer = null;  // currently displayed trainer name (used by refreshAll and the Trainers tab)
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -2330,6 +2359,19 @@ function monthFromDate(r) {
   if (isNaN(m)) return '';
   return MONTHS[m];
 }
+
+// Day-of-month (1..31) from a record's date, or null if unparseable.
+// Used by the chart drill-down (month bar → per-day breakdown).
+function dayFromDate(r) {
+  if (!r || !r.date) return null;
+  const d = new Date(r.date);
+  const day = d.getDate();
+  return isNaN(day) ? null : day;
+}
+
+// Drill-down state per chart canvas id. null = monthly view; a number 0..11 = that month's daily view.
+// Keyed by id so dashboard ('chartMonths') and trainer ('t_chartMonths') drill independently.
+const drillState = {};
 
 // Year filtering for dashboard and journal.
 // Records are tagged with `month: "Март"` only — no year. Year must be derived from
@@ -2947,11 +2989,10 @@ async function migrateNormalizeRefs() {
         console.warn(`Normalize: failed to PATCH ${column}="${alias}" → "${canonical}":`, e.message);
         // Continue with others — partial cleanup is better than aborting.
       }
-      // Mirror locally (works on the camelCase JS field, not snake_case)
-      const jsField = column === 'tab_number' ? 'tabNumber' :
-                      column === 'full_name'  ? 'fullName'  :
-                      column;
-      db.records.forEach(r => { if (r[jsField] === alias) r[jsField] = canonical; });
+      // Mirror locally. rewrite() is only ever called with column ∈
+      // {course, enterprise, instructor}, whose JS field names match the column
+      // name exactly, so we can index by `column` directly.
+      db.records.forEach(r => { if (r[column] === alias) r[column] = canonical; });
       collapsed++;
     }
   };
@@ -3761,15 +3802,27 @@ function updateCharts() {
   const titleEl = document.getElementById('chartMonthsTitle');
   if (titleEl) {
     const yearPart = selectedDashboardYear === 'all' ? '(все годы)' : `· ${selectedDashboardYear}`;
-    titleEl.textContent = summaryMode
-      ? `Обучено по месяцам ${yearPart}`
-      : `Обучено по месяцам ${yearPart}`;
+    titleEl.textContent = `Обучено по месяцам ${yearPart}`;
   }
-  // Monthly chart — in summary mode stacked by tool_type, else by enterprise
+  // Monthly chart — in summary mode stacked by tool_type, else by enterprise.
+  // Drill-down (month → day) is enabled only when a single year is selected,
+  // because in "all years" mode a month bar aggregates multiple years and a
+  // day axis would be ambiguous.
+  const drillEnabled = selectedDashboardYear !== 'all';
+  const drillOpts = {
+    titleId: 'chartMonthsTitle',
+    drillMonth: drillEnabled ? (drillState['chartMonths'] ?? null) : null,
+    onMonthClick: drillEnabled ? (monthIdx) => {
+      drillState['chartMonths'] = monthIdx;
+      updateCharts();
+    } : undefined,
+    redraw: () => { drillState['chartMonths'] = null; updateCharts(); },
+  };
+  if (!drillEnabled) drillState['chartMonths'] = null;
   if (summaryMode) {
-    updateStackedBarChartByTool('chartMonths', recs);
+    updateStackedBarChartByTool('chartMonths', recs, drillOpts);
   } else {
-    updateStackedBarChart('chartMonths', recs);
+    updateStackedBarChart('chartMonths', recs, undefined, drillOpts);
   }
 
   // Right-side donut: tool share in summary mode, enterprises in per-tool mode
@@ -3809,66 +3862,114 @@ function updateCharts() {
 
 }
 
+// --- Chart drill-down (month → day) -------------------------------------
+// When a month bar is clicked, we re-filter the records to that month and
+// re-render the SAME canvas with day-of-month labels. A "back" link in the
+// chart title returns to the monthly view. Shared by dashboard + trainer.
+
+// month index (0..11) of a record, or -1 if unparseable
+function monthIndexFromDate(r) {
+  if (!r || !r.date) return -1;
+  const m = new Date(r.date).getMonth();
+  return isNaN(m) ? -1 : m;
+}
+
+// Show/hide a "← back" link inside a chart title element.
+// titleId is the title element; redraw() re-renders the monthly view.
+function setDrillBackLink(titleId, monthIdx, redraw) {
+  const titleEl = document.getElementById(titleId);
+  if (!titleEl) return;
+  let link = titleEl.querySelector('.drill-back');
+  if (monthIdx === null) {
+    if (link) link.remove();
+    return;
+  }
+  if (!link) {
+    link = document.createElement('button');
+    link.className = 'drill-back pdf-hide';
+    link.type = 'button';
+    link.style.cssText = 'margin-left:8px;font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;color:inherit';
+    link.innerHTML = '<i class="ti ti-arrow-left" style="vertical-align:-1px"></i> к месяцам';
+    link.addEventListener('click', () => { redraw(); });
+    titleEl.appendChild(link);
+  }
+}
+
 // Stacked bar chart: each month split by enterprise. Top-8 enterprises shown
 // individually (matching donut colors), the rest aggregated as "Прочие".
 // `chartsObj` lets us reuse for both dashboard (charts) and trainer page (trainerCharts).
-function updateStackedBarChart(id, recs, chartsObj) {
+// `opts.drillMonth` (0..11) renders per-day for that month; null = monthly.
+// `opts.onMonthClick(monthIdx)` enables click-to-drill when provided.
+// `opts.titleId` is the chart title element used for the back link.
+function updateStackedBarChart(id, recs, chartsObj, opts) {
   const dict = chartsObj || charts;
   if (dict[id]) dict[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
   if (!ctx) return;
 
+  opts = opts || {};
+  const drillMonth = (opts.drillMonth === 0 || opts.drillMonth) ? opts.drillMonth : null;
+
   // Same colors as donut so the two charts are visually consistent
   const colors = ['#5b4ed1','#2dadb5','#d9a432','#15a571','#e85a6d','#9968e3','#f08648','#84cc16'];
   const otherColor = '#9ca0b3';
 
-  // Find top-8 enterprises by total record count
+  // Axis: months (default) or days-of-month (when drilled into one month).
+  let axisLabels, recBucketIndex, recordsInScope;
+  if (drillMonth === null) {
+    axisLabels = MONTHS;
+    recordsInScope = recs;
+    recBucketIndex = (r) => MONTHS.indexOf(monthFromDate(r)); // -1 if no date
+  } else {
+    const daysInMonth = new Date(2000, drillMonth + 1, 0).getDate(); // year-agnostic upper bound
+    axisLabels = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
+    recordsInScope = recs.filter(r => monthIndexFromDate(r) === drillMonth);
+    recBucketIndex = (r) => { const d = dayFromDate(r); return d ? d - 1 : -1; };
+  }
+
+  // Find top-8 enterprises by total record count (within scope)
   const totals = {};
-  recs.forEach(r => { if (r.enterprise) totals[r.enterprise] = (totals[r.enterprise]||0) + 1; });
+  recordsInScope.forEach(r => { if (r.enterprise) totals[r.enterprise] = (totals[r.enterprise]||0) + 1; });
   const topEnterprises = Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0,8).map(e => e[0]);
   const topSet = new Set(topEnterprises);
 
-  // Build month × enterprise matrix
-  const matrix = {};
-  MONTHS.forEach(m => {
-    matrix[m] = {};
-    topEnterprises.forEach(e => matrix[m][e] = 0);
-    matrix[m]['__other'] = 0;
+  // Build label × enterprise matrix
+  const matrix = axisLabels.map(() => {
+    const o = {}; topEnterprises.forEach(e => o[e] = 0); o['__other'] = 0; return o;
   });
-  recs.forEach(r => {
-    const m = monthFromDate(r);
-    if (!m || !r.enterprise) return;
+  recordsInScope.forEach(r => {
+    const idx = recBucketIndex(r);
+    if (idx < 0 || !r.enterprise) return;
     const bucket = topSet.has(r.enterprise) ? r.enterprise : '__other';
-    if (matrix[m]) matrix[m][bucket]++;
+    if (matrix[idx]) matrix[idx][bucket]++;
   });
 
   // Build datasets — one per enterprise. Skip "Прочие" if always zero.
-  const otherTotal = MONTHS.reduce((sum, m) => sum + matrix[m]['__other'], 0);
+  const otherTotal = matrix.reduce((sum, col) => sum + col['__other'], 0);
   const datasets = topEnterprises.map((ent, i) => ({
     label: ent,
-    data: MONTHS.map(m => matrix[m][ent]),
+    data: matrix.map(col => col[ent]),
     backgroundColor: colors[i % colors.length],
     borderWidth: 0,
   }));
   if (otherTotal > 0) {
     datasets.push({
       label: 'Прочие',
-      data: MONTHS.map(m => matrix[m]['__other']),
+      data: matrix.map(col => col['__other']),
       backgroundColor: otherColor,
       borderWidth: 0,
     });
   }
 
   // Inline plugin: draw the total of each stacked bar above the bar.
-  // Stacked bars hide individual segment values; without this, you can't see
-  // "how many people were trained in March" without doing tooltip math.
+  // In day view with many bars, only label non-zero bars (skip clutter on empty days).
   const totalsPlugin = {
     id: 'stackedBarTotals',
     afterDatasetsDraw(chart) {
       const { ctx, chartArea, scales } = chart;
       if (!chartArea || !scales.x || !scales.y) return;
-      const totals = MONTHS.map((_, monthIdx) =>
-        chart.data.datasets.reduce((sum, ds) => sum + (ds.data[monthIdx] || 0), 0)
+      const totals = chart.data.labels.map((_, idx) =>
+        chart.data.datasets.reduce((sum, ds) => sum + (ds.data[idx] || 0), 0)
       );
       ctx.save();
       ctx.fillStyle = '#5a5040';
@@ -3885,19 +3986,29 @@ function updateStackedBarChart(id, recs, chartsObj) {
     }
   };
 
+  // Manage the "← к месяцам" back link in the chart title
+  if (opts.titleId && opts.onMonthClick) {
+    setDrillBackLink(opts.titleId, drillMonth, opts.redraw);
+  }
+
   dict[id] = new Chart(ctx, {
     type: 'bar',
-    data: { labels: MONTHS, datasets },
+    data: { labels: axisLabels, datasets },
     plugins: [totalsPlugin],
     options: {
-      // Add a bit of headroom on the y-axis so total labels don't get clipped at the top
       layout: { padding: { top: 16 } },
+      // Click a month bar to drill into its days (only in monthly view, only if enabled)
+      onClick: (drillMonth === null && opts.onMonthClick) ? (evt, els) => {
+        if (els && els.length) opts.onMonthClick(els[0].index);
+      } : undefined,
+      onHover: (drillMonth === null && opts.onMonthClick) ? (evt, els) => {
+        evt.native.target.style.cursor = els.length ? 'pointer' : 'default';
+      } : undefined,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
+        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Inter', size: 10 }, padding: 6, boxWidth: 10 } },
         tooltip: {
           filter: (item) => item.parsed.y > 0,
           callbacks: {
-            // Show count next to enterprise name in tooltip
             label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}`
           }
         }
@@ -3906,10 +4017,6 @@ function updateStackedBarChart(id, recs, chartsObj) {
         x: { stacked: true, grid: { color: '#e6e8ef', drawBorder: false }, ticks: { color: '#9ca0b3', font: { family: 'JetBrains Mono', size: 11 } } },
         y: { stacked: true, grid: { color: '#e6e8ef', drawBorder: false }, ticks: { color: '#9ca0b3', font: { family: 'JetBrains Mono', size: 11 } } }
       },
-      // maintainAspectRatio:false means Chart.js fills its container without trying to
-      // grow it — canvas height is controlled by CSS (global `canvas { max-height: 260px }`).
-      // With :true, repeated mobile/desktop viewport toggles caused the canvas to keep
-      // stretching the page (the "canvas-bug" called out in v58 review §7.2).
       responsive: true, maintainAspectRatio: false
     }
   });
@@ -3917,25 +4024,39 @@ function updateStackedBarChart(id, recs, chartsObj) {
 
 // Summary-mode variant: stack months chart by tool_type (VR / Soldamatic / ...).
 // Mirrors updateStackedBarChart but groups by tool instead of enterprise.
-function updateStackedBarChartByTool(id, recs) {
+// `opts.drillMonth`, `opts.onMonthClick`, `opts.titleId`, `opts.redraw` — see updateStackedBarChart.
+function updateStackedBarChartByTool(id, recs, opts) {
   if (charts[id]) charts[id].destroy();
   const ctx = document.getElementById(id)?.getContext('2d');
   if (!ctx) return;
 
-  const matrix = {};
-  MONTHS.forEach(m => {
-    matrix[m] = {};
-    TOOL_ORDER.forEach(t => matrix[m][t] = 0);
+  opts = opts || {};
+  const drillMonth = (opts.drillMonth === 0 || opts.drillMonth) ? opts.drillMonth : null;
+
+  let axisLabels, recBucketIndex, recordsInScope;
+  if (drillMonth === null) {
+    axisLabels = MONTHS;
+    recordsInScope = recs;
+    recBucketIndex = (r) => MONTHS.indexOf(monthFromDate(r));
+  } else {
+    const daysInMonth = new Date(2000, drillMonth + 1, 0).getDate();
+    axisLabels = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
+    recordsInScope = recs.filter(r => monthIndexFromDate(r) === drillMonth);
+    recBucketIndex = (r) => { const d = dayFromDate(r); return d ? d - 1 : -1; };
+  }
+
+  const matrix = axisLabels.map(() => {
+    const o = {}; TOOL_ORDER.forEach(t => o[t] = 0); return o;
   });
-  recs.forEach(r => {
-    const m = monthFromDate(r);
-    if (!m || !TOOL_ORDER.includes(r.toolType)) return;
-    matrix[m][r.toolType]++;
+  recordsInScope.forEach(r => {
+    const idx = recBucketIndex(r);
+    if (idx < 0 || !TOOL_ORDER.includes(r.toolType)) return;
+    if (matrix[idx]) matrix[idx][r.toolType]++;
   });
 
   const datasets = TOOL_ORDER.map(t => ({
     label: toolLabel(t),
-    data: MONTHS.map(m => matrix[m][t]),
+    data: matrix.map(col => col[t]),
     backgroundColor: TOOL_COLORS[t] || '#888',
     borderWidth: 0,
   })).filter(ds => ds.data.some(v => v > 0));
@@ -3946,8 +4067,8 @@ function updateStackedBarChartByTool(id, recs) {
     afterDatasetsDraw(chart) {
       const { ctx, chartArea, scales } = chart;
       if (!chartArea || !scales.x || !scales.y) return;
-      const totals = MONTHS.map((_, monthIdx) =>
-        chart.data.datasets.reduce((sum, ds) => sum + (ds.data[monthIdx] || 0), 0)
+      const totals = chart.data.labels.map((_, idx) =>
+        chart.data.datasets.reduce((sum, ds) => sum + (ds.data[idx] || 0), 0)
       );
       ctx.save();
       ctx.fillStyle = '#5a5040';
@@ -3964,14 +4085,24 @@ function updateStackedBarChartByTool(id, recs) {
     }
   };
 
+  if (opts.titleId && opts.onMonthClick) {
+    setDrillBackLink(opts.titleId, drillMonth, opts.redraw);
+  }
+
   charts[id] = new Chart(ctx, {
     type: 'bar',
-    data: { labels: MONTHS, datasets },
+    data: { labels: axisLabels, datasets },
     plugins: [totalsPlugin],
     options: {
       layout: { padding: { top: 16 } },
+      onClick: (drillMonth === null && opts.onMonthClick) ? (evt, els) => {
+        if (els && els.length) opts.onMonthClick(els[0].index);
+      } : undefined,
+      onHover: (drillMonth === null && opts.onMonthClick) ? (evt, els) => {
+        evt.native.target.style.cursor = els.length ? 'pointer' : 'default';
+      } : undefined,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
+        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Inter', size: 10 }, padding: 6, boxWidth: 10 } },
         tooltip: { filter: (item) => item.parsed.y > 0, callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}` } }
       },
       scales: {
@@ -4000,7 +4131,7 @@ function updateDonut(id, labels, data, chartsObj, customColors) {
           position: 'right',
           labels: {
             color: '#5a5040',
-            font: { family: 'Exo 2', size: 11 },
+            font: { family: 'Inter', size: 11 },
             padding: 8,
             boxWidth: 12,
             // Custom labels: "Name — count (percent%)" so the static legend is informative
@@ -4266,7 +4397,7 @@ function fillSelect(id, items, sortFn) {
   const sel = document.getElementById(id);
   const val = sel.value;
   const first = sel.options[0].outerHTML;
-  sel.innerHTML = first + items.map(i => `<option value="${i}">${i}</option>`).join('');
+  sel.innerHTML = first + items.map(i => `<option value="${escapeHTML(i)}">${escapeHTML(i)}</option>`).join('');
   sel.value = val;
 }
 
@@ -5352,7 +5483,7 @@ function printQR() {
   // Build a temporary printable area
   const printArea = document.createElement('div');
   printArea.id = 'qrPrintArea';
-  printArea.innerHTML = `<h2>${courseName}</h2>${wrap.innerHTML}`;
+  printArea.innerHTML = `<h2>${escapeHTML(courseName)}</h2>${wrap.innerHTML}`;
   document.body.appendChild(printArea);
 
   // Cleanup after print dialog closes (whether saved or cancelled)
@@ -6116,6 +6247,12 @@ async function restoreBackup(id) {
     }
     // 4. Replace local db. Mark dirty + save explicitly so db_state reflects the snapshot too.
     db = snapshot;
+    // Records from the snapshot were already inserted into the dedicated table above (step 3),
+    // so the one-time migrations must not re-run on the next loadDB. An old (pre-v60) backup may
+    // carry these flags as false/undefined; force them true here. The migrations are idempotent,
+    // but re-running them would create a spurious 'before-normalize' backup for no reason.
+    db.recordsMigrated = true;
+    db.refsNormalized = true;
     baseSnapshot = cloneDB(db);
     isDirty = true;
     await saveDB({ silent: true });
@@ -6404,7 +6541,6 @@ function renderHistory() {
 // ============================================================
 // ТРЕНЕРЫ (Trainers / Instructors page)
 // ============================================================
-let selectedTrainer = null;       // currently displayed trainer name
 let trainerCharts = {};           // Chart.js instances for trainer page
 
 // Build sorted list of all trainers who have records, by count desc then alphabetically.
@@ -6538,6 +6674,7 @@ function restoreTrainerFilters() {
 
 function selectTrainer(name) {
   selectedTrainer = name;
+  drillState['t_chartMonths'] = null;
   renderTrainersList();
   renderTrainerDetail();
 }
@@ -6716,8 +6853,21 @@ function refreshTrainerData() {
   }
 
   // Months chart — stacked by enterprise (top-8 + "Прочие"), same logic as dashboard.
-  // For a single trainer, this shows which enterprises they trained at, broken down by month.
-  updateStackedBarChart('t_chartMonths', recs, trainerCharts);
+  // Drill-down enabled only when the visible data is a single year (explicit year
+  // filter, or all records happen to fall in one year). Otherwise a day axis is ambiguous.
+  const tYears = [...new Set(recs.map(r => recordYear(r)).filter(Boolean))];
+  const tDrillEnabled = !!year || tYears.length === 1;
+  const tDrillOpts = {
+    titleId: 't_chartMonthsTitle',
+    drillMonth: tDrillEnabled ? (drillState['t_chartMonths'] ?? null) : null,
+    onMonthClick: tDrillEnabled ? (monthIdx) => {
+      drillState['t_chartMonths'] = monthIdx;
+      refreshTrainerData();
+    } : undefined,
+    redraw: () => { drillState['t_chartMonths'] = null; refreshTrainerData(); },
+  };
+  if (!tDrillEnabled) drillState['t_chartMonths'] = null;
+  updateStackedBarChart('t_chartMonths', recs, trainerCharts, tDrillOpts);
 
   // Enterprises donut (registered in trainerCharts so it's destroyed/redrawn properly on filter change)
   const entCounts = {};
@@ -7050,7 +7200,7 @@ async function switchTool(tool) {
   localStorage.setItem('vr_current_tool', tool);
   updateToolSwitcherUI();
   // Reset selected trainer — it belongs to the previous tool
-  if (typeof selectedTrainer !== 'undefined') selectedTrainer = null;
+  selectedTrainer = null;
   try {
     await loadDB();
   } finally {
@@ -7079,7 +7229,7 @@ async function enterSummaryMode() {
     try { await saveDB({ silent: true }); } catch (e) { console.warn('Pre-summary save failed:', e); }
   }
   summaryMode = true;
-  if (typeof selectedTrainer !== 'undefined') selectedTrainer = null;
+  selectedTrainer = null;
   updateToolSwitcherUI();
   applySummaryModeUI();
   // If user is on a now-hidden tab, fall back to dashboard.
