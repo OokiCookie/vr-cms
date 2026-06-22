@@ -2343,7 +2343,6 @@ let selectedIds = new Set();
 let charts = {};
 let sortField = 'date';
 let sortDir = 'desc';
-let selectedTrainer = null;  // currently displayed trainer name (used by refreshAll and the Trainers tab)
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -2739,6 +2738,43 @@ function setInstructorHidden(name, hidden) {
   else delete db.hiddenInstructors[name];
 }
 
+// Global (cross-tool) hidden flag for the summary dashboard. Independent of the per-tool
+// db.hiddenInstructors. Stored in the VR row (db_state.id=1), same shared-storage pattern
+// as customEnterprises, so it's visible from every tool and from summary mode.
+function isInstructorHiddenSummary(name) {
+  return !!(db.hiddenInstructorsSummary && db.hiddenInstructorsSummary[name]);
+}
+function setInstructorHiddenSummary(name, hidden) {
+  if (!db.hiddenInstructorsSummary) db.hiddenInstructorsSummary = {};
+  if (hidden) db.hiddenInstructorsSummary[name] = true;
+  else delete db.hiddenInstructorsSummary[name];
+}
+// Summary mode is read-only (no saveDB), so persist this single field via a direct
+// read-modify-write PATCH to the VR row — mirrors the "push shared enterprises to VR row"
+// path in saveDB. Returns true on success.
+async function persistHiddenInstructorsSummary() {
+  try {
+    const vrGet = await fetch(`${SUPABASE_URL}/rest/v1/db_state?id=eq.1&select=data`, { headers: SB_HEADERS });
+    if (!vrGet.ok) return false;
+    const vrRows = await vrGet.json();
+    const vrData = vrRows[0]?.data || {};
+    vrData.hiddenInstructorsSummary = db.hiddenInstructorsSummary || {};
+    vrData.lastModified = new Date().toISOString();
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/db_state?id=eq.1`,
+      {
+        method: 'PATCH',
+        headers: { ...SB_HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ data: vrData })
+      }
+    );
+    return res.ok;
+  } catch (e) {
+    console.warn('Persist hiddenInstructorsSummary failed:', e);
+    return false;
+  }
+}
+
 // Returns only non-deleted records. Use this for ALL display, statistics, filters and exports.
 // Use db.records directly only when adding/modifying records or working with the trash.
 function activeRecords() {
@@ -2783,10 +2819,13 @@ async function fetchCloudDB() {
     data.records = [];
   }
   // Shared customEnterprises: for non-VR tools, override with VR's value.
+  // hiddenInstructorsSummary is shared the same way (global hidden list for the summary
+  // dashboard); for VR it's already in `data` since this IS the VR row.
   if (vrRes && vrRes.ok) {
     const vrRows = await vrRes.json();
     const vrData = vrRows[0]?.data || {};
     data.customEnterprises = Array.isArray(vrData.customEnterprises) ? vrData.customEnterprises : [];
+    data.hiddenInstructorsSummary = vrData.hiddenInstructorsSummary || {};
   }
   return data;
 }
@@ -2989,10 +3028,11 @@ async function migrateNormalizeRefs() {
         console.warn(`Normalize: failed to PATCH ${column}="${alias}" → "${canonical}":`, e.message);
         // Continue with others — partial cleanup is better than aborting.
       }
-      // Mirror locally. rewrite() is only ever called with column ∈
-      // {course, enterprise, instructor}, whose JS field names match the column
-      // name exactly, so we can index by `column` directly.
-      db.records.forEach(r => { if (r[column] === alias) r[column] = canonical; });
+      // Mirror locally (works on the camelCase JS field, not snake_case)
+      const jsField = column === 'tab_number' ? 'tabNumber' :
+                      column === 'full_name'  ? 'fullName'  :
+                      column;
+      db.records.forEach(r => { if (r[jsField] === alias) r[jsField] = canonical; });
       collapsed++;
     }
   };
@@ -3154,6 +3194,10 @@ async function saveDB(opts = {}) {
         enterprisesToPushToVR = stateForCloud.customEnterprises || [];
       }
       delete stateForCloud.customEnterprises;
+      // hiddenInstructorsSummary is global too — lives only in the VR row. Editing happens
+      // in summary mode via persistHiddenInstructorsSummary, never through a per-tool save,
+      // so just strip it from non-VR rows to avoid a stale duplicate.
+      delete stateForCloud.hiddenInstructorsSummary;
     }
 
     // 5. Upsert to cloud (db_state only — records were already synced individually)
@@ -3702,9 +3746,11 @@ function renderInstructorBreakdown(recs) {
     counts[key] = (counts[key] || 0) + 1;
   });
   // Hidden trainers are excluded from the dashboard view too (managed on the Trainers tab).
+  // Per-tool dashboard uses db.hiddenInstructors; summary dashboard uses the global list.
   // "— не указан —" is synthetic and never hidden.
+  const isHidden = summaryMode ? isInstructorHiddenSummary : isInstructorHidden;
   const sorted = Object.entries(counts)
-    .filter(([name]) => name === '— не указан —' || !isInstructorHidden(name))
+    .filter(([name]) => name === '— не указан —' || !isHidden(name))
     .sort((a,b) => b[1]-a[1]);
   const total = recs.length || 1;
   const el = document.getElementById('instructorBreakdown');
@@ -4005,7 +4051,7 @@ function updateStackedBarChart(id, recs, chartsObj, opts) {
         evt.native.target.style.cursor = els.length ? 'pointer' : 'default';
       } : undefined,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Inter', size: 10 }, padding: 6, boxWidth: 10 } },
+        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
         tooltip: {
           filter: (item) => item.parsed.y > 0,
           callbacks: {
@@ -4102,7 +4148,7 @@ function updateStackedBarChartByTool(id, recs, opts) {
         evt.native.target.style.cursor = els.length ? 'pointer' : 'default';
       } : undefined,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Inter', size: 10 }, padding: 6, boxWidth: 10 } },
+        legend: { position: 'bottom', labels: { color: '#5a5040', font: { family: 'Exo 2', size: 10 }, padding: 6, boxWidth: 10 } },
         tooltip: { filter: (item) => item.parsed.y > 0, callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}` } }
       },
       scales: {
@@ -4131,7 +4177,7 @@ function updateDonut(id, labels, data, chartsObj, customColors) {
           position: 'right',
           labels: {
             color: '#5a5040',
-            font: { family: 'Inter', size: 11 },
+            font: { family: 'Exo 2', size: 11 },
             padding: 8,
             boxWidth: 12,
             // Custom labels: "Name — count (percent%)" so the static legend is informative
@@ -4397,7 +4443,7 @@ function fillSelect(id, items, sortFn) {
   const sel = document.getElementById(id);
   const val = sel.value;
   const first = sel.options[0].outerHTML;
-  sel.innerHTML = first + items.map(i => `<option value="${escapeHTML(i)}">${escapeHTML(i)}</option>`).join('');
+  sel.innerHTML = first + items.map(i => `<option value="${i}">${i}</option>`).join('');
   sel.value = val;
 }
 
@@ -5483,7 +5529,7 @@ function printQR() {
   // Build a temporary printable area
   const printArea = document.createElement('div');
   printArea.id = 'qrPrintArea';
-  printArea.innerHTML = `<h2>${escapeHTML(courseName)}</h2>${wrap.innerHTML}`;
+  printArea.innerHTML = `<h2>${courseName}</h2>${wrap.innerHTML}`;
   document.body.appendChild(printArea);
 
   // Cleanup after print dialog closes (whether saved or cancelled)
@@ -6247,12 +6293,6 @@ async function restoreBackup(id) {
     }
     // 4. Replace local db. Mark dirty + save explicitly so db_state reflects the snapshot too.
     db = snapshot;
-    // Records from the snapshot were already inserted into the dedicated table above (step 3),
-    // so the one-time migrations must not re-run on the next loadDB. An old (pre-v60) backup may
-    // carry these flags as false/undefined; force them true here. The migrations are idempotent,
-    // but re-running them would create a spurious 'before-normalize' backup for no reason.
-    db.recordsMigrated = true;
-    db.refsNormalized = true;
     baseSnapshot = cloneDB(db);
     isDirty = true;
     await saveDB({ silent: true });
@@ -6450,6 +6490,18 @@ async function toggleInstructorHidden(name) {
   toast(currentlyHidden ? `«${name}» снова в активных` : `«${name}» скрыт`, 'success');
 }
 
+// Summary-mode eye toggle: writes the global hiddenInstructorsSummary list and persists it
+// to the VR row directly (saveDB is blocked in summary mode).
+async function toggleInstructorHiddenSummary(name) {
+  const currentlyHidden = isInstructorHiddenSummary(name);
+  setInstructorHiddenSummary(name, !currentlyHidden);
+  if (!currentlyHidden && selectedTrainer === name) selectedTrainer = null;
+  const ok = await persistHiddenInstructorsSummary();
+  refreshAll();
+  if (!ok) { toast('Не удалось сохранить — изменение только локально', 'error'); return; }
+  toast(currentlyHidden ? `«${name}» снова в общем дашборде` : `«${name}» скрыт в общем дашборде`, 'success');
+}
+
 // Permanently delete a trainer: unlinks them from all their records (records stay in the
 // journal with no instructor) and removes from db.instructors / db.hiddenInstructors.
 // Records themselves are NEVER deleted — only the instructor attribution is cleared.
@@ -6541,6 +6593,7 @@ function renderHistory() {
 // ============================================================
 // ТРЕНЕРЫ (Trainers / Instructors page)
 // ============================================================
+let selectedTrainer = null;       // currently displayed trainer name
 let trainerCharts = {};           // Chart.js instances for trainer page
 
 // Build sorted list of all trainers who have records, by count desc then alphabetically.
@@ -6550,12 +6603,10 @@ function getAllTrainers() {
     const name = (r.instructor||'').trim();
     if (name) counts[name] = (counts[name]||0) + 1;
   });
-  // In per-tool mode: filter by db.hiddenInstructors (a per-tool flag).
-  // In summary mode: show all trainers — hidden is per-tool and would be ambiguous
-  // (a trainer hidden in VR might still be active in Soldamatic). Showing all keeps
-  // the summary an honest cross-tool view; users manage hide/show on per-tool tabs.
+  // Per-tool mode filters by db.hiddenInstructors. Summary mode filters by the global
+  // hiddenInstructorsSummary list (managed via the eye icon in summary mode itself).
   return Object.entries(counts)
-    .filter(([name]) => summaryMode ? true : !isInstructorHidden(name))
+    .filter(([name]) => summaryMode ? !isInstructorHiddenSummary(name) : !isInstructorHidden(name))
     .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
 }
 
@@ -6564,33 +6615,33 @@ function renderTrainersList() {
   document.getElementById('trainersCount').textContent = trainers.length;
   const list = document.getElementById('trainersList');
 
-  // Collect hidden trainers separately. They have records but isInstructorHidden is true.
+  // Collect hidden trainers separately. They have records but are flagged hidden.
   // We can't get them from getAllTrainers (it filters hidden out), so compute fresh.
-  // Only trainers with actual records appear — orphans from db.instructors (e.g. after
-  // backup restore) aren't shown.
-  // In summary mode there is no per-tool hidden list to show; skip the hidden block entirely.
+  // Per-tool uses db.hiddenInstructors; summary uses the global hiddenInstructorsSummary.
   const hiddenCounts = {};
-  if (!summaryMode) {
-    activeRecordsForView().forEach(r => {
-      const name = (r.instructor || '').trim();
-      if (name && isInstructorHidden(name)) hiddenCounts[name] = (hiddenCounts[name] || 0) + 1;
-    });
-  }
+  const isHidden = summaryMode ? isInstructorHiddenSummary : isInstructorHidden;
+  activeRecordsForView().forEach(r => {
+    const name = (r.instructor || '').trim();
+    if (name && isHidden(name)) hiddenCounts[name] = (hiddenCounts[name] || 0) + 1;
+  });
   const hidden = Object.entries(hiddenCounts).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],'ru'));
 
   // Single row template — used for both visible and hidden lists.
   // Layout: [name | count | 👁 eye | ✏ pencil]. Both icons stop click propagation so
   // they don't trigger selectTrainer.
-  // In summary mode the mutation buttons (eye/pencil) are hidden — trainers are read-only there.
+  // Eye toggles hidden state: per-tool flag in normal mode, global list in summary.
+  // Rename (pencil) is a mutation — only available per-tool (summary is otherwise read-only).
   const renderRow = (name, cnt, isHidden) => {
     const safe = name.replace(/'/g, "\\'");
     const isActive = name === selectedTrainer ? 'active' : '';
     const opacity = isHidden ? 'opacity:0.55' : '';
     const eyeIcon = isHidden ? '<i class="ti ti-eye-off"></i>' : '<i class="ti ti-eye"></i>';
     const eyeTitle = isHidden ? 'Показать тренера' : 'Скрыть тренера';
-    const actions = summaryMode ? '' : `
-        <button onclick="event.stopPropagation();toggleInstructorHidden('${safe}')" title="${eyeTitle}" class="trainer-row-icon">${eyeIcon}</button>
+    const toggleFn = summaryMode ? 'toggleInstructorHiddenSummary' : 'toggleInstructorHidden';
+    const pencil = summaryMode ? '' : `
         <button onclick="event.stopPropagation();startInstructorInlineEdit('${safe}', this.closest('.trainer-row'))" title="Переименовать тренера" class="trainer-row-icon"><i class="ti ti-pencil"></i></button>`;
+    const actions = `
+        <button onclick="event.stopPropagation();${toggleFn}('${safe}')" title="${eyeTitle}" class="trainer-row-icon">${eyeIcon}</button>${pencil}`;
     return `<div class="trainer-row ${isActive}" onclick="selectTrainer('${safe}')" style="${opacity}">
       <span class="trainer-row-name">${escapeHTML(name)}</span>
       <span style="display:inline-flex;align-items:center;gap:8px">
@@ -7200,7 +7251,7 @@ async function switchTool(tool) {
   localStorage.setItem('vr_current_tool', tool);
   updateToolSwitcherUI();
   // Reset selected trainer — it belongs to the previous tool
-  selectedTrainer = null;
+  if (typeof selectedTrainer !== 'undefined') selectedTrainer = null;
   try {
     await loadDB();
   } finally {
@@ -7229,7 +7280,7 @@ async function enterSummaryMode() {
     try { await saveDB({ silent: true }); } catch (e) { console.warn('Pre-summary save failed:', e); }
   }
   summaryMode = true;
-  selectedTrainer = null;
+  if (typeof selectedTrainer !== 'undefined') selectedTrainer = null;
   updateToolSwitcherUI();
   applySummaryModeUI();
   // If user is on a now-hidden tab, fall back to dashboard.
@@ -7242,6 +7293,15 @@ async function loadSummaryDB() {
   setFileStatus('yellow', 'Загрузка сводки…');
   try {
     summaryRecords = await fetchAllRecordsAcrossTools();
+    // db still holds the last per-tool snapshot. Refresh the global hidden list from the
+    // VR row so the summary dashboard filters by current cross-tool state, not stale data.
+    try {
+      const vrGet = await fetch(`${SUPABASE_URL}/rest/v1/db_state?id=eq.1&select=data`, { headers: SB_HEADERS });
+      if (vrGet.ok) {
+        const vrRows = await vrGet.json();
+        db.hiddenInstructorsSummary = vrRows[0]?.data?.hiddenInstructorsSummary || {};
+      }
+    } catch (e) { console.warn('Load hiddenInstructorsSummary failed:', e); }
     setFileStatus('green', `Общая сводка · ${summaryRecords.length} записей`);
     refreshAll();
   } catch (e) {
