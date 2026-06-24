@@ -2294,6 +2294,7 @@ function currentDbStateId() { return TOOL_TYPES[currentTool].dbStateId; }
 // without a network reload.
 // ============================================================
 let summaryMode = false;
+let trainerToolFilter = ''; // when set, trainer card shows only this tool_type (clicked breakdown chip)
 let summaryRecords = []; // cross-tool records, populated by loadSummaryDB()
 // Shared accessor used by dashboard/trainers: returns summaryRecords in summary mode,
 // otherwise activeRecords() (per-tool). All non-deleted only.
@@ -6693,7 +6694,8 @@ function saveTrainerFilters() {
     dateFrom:   document.getElementById('t_dateFrom')?.value || '',
     dateTo:     document.getElementById('t_dateTo')?.value || '',
     rangeMode:  document.getElementById('t_dateFilterRange')?.style.display !== 'none',
-    enterprises: getChipMultiValues('t_enterprise')
+    enterprises: getChipMultiValues('t_enterprise'),
+    toolFilter: trainerToolFilter
   };
   const all = trainerFiltersAll();
   all[trainerFilterKey(selectedTrainer)] = state;
@@ -6712,6 +6714,7 @@ function restoreTrainerFilters() {
   setVal('t_dateFrom', state.dateFrom);
   setVal('t_dateTo', state.dateTo);
   if (state.rangeMode) toggleTrainerDateRange(true);
+  trainerToolFilter = state.toolFilter || '';
   // Chip-multi: container exists (just rendered), push values into its state directly
   if (Array.isArray(state.enterprises) && state.enterprises.length) {
     const container = document.getElementById('t_enterprise');
@@ -6726,6 +6729,7 @@ function restoreTrainerFilters() {
 function selectTrainer(name) {
   selectedTrainer = name;
   drillState['t_chartMonths'] = null;
+  trainerToolFilter = '';
   renderTrainersList();
   renderTrainerDetail();
 }
@@ -6865,25 +6869,42 @@ function refreshTrainerData() {
     if (year && recordYear(r) !== year) return false;
     if (month && monthFromDate(r) !== month) return false;
     if (entFilters.length && !entFilters.includes(r.enterprise)) return false;
+    if (trainerToolFilter && r.toolType !== trainerToolFilter) return false;
     return true;
   });
 
   document.getElementById('t_totalCount').textContent = recs.length;
 
-  // Per-tool breakdown chips (summary mode) — recomputed from the filtered set
-  // so VR/Soldamatic counts always sum to "Всего обучений".
+  // Per-tool breakdown chips (summary mode) — counts are computed from the set
+  // filtered by everything EXCEPT the tool filter, so all tools stay visible and
+  // clickable even when one is active. Clicking a chip toggles trainerToolFilter.
   const toolBreakdownEl = document.getElementById('t_toolBreakdown');
   if (toolBreakdownEl) {
+    const recsNoTool = activeRecordsForView().filter(r => {
+      if ((r.instructor||'').trim() !== selectedTrainer) return false;
+      if (dateExact && r.date !== dateExact) return false;
+      if (dateFrom && (!r.date || r.date < dateFrom)) return false;
+      if (dateTo && (!r.date || r.date > dateTo)) return false;
+      if (year && recordYear(r) !== year) return false;
+      if (month && monthFromDate(r) !== month) return false;
+      if (entFilters.length && !entFilters.includes(r.enterprise)) return false;
+      return true;
+    });
     const perTool = TOOL_ORDER.map(t => ({
+      tool: t,
       label: toolLabel(t),
-      count: recs.filter(r => r.toolType === t).length,
+      count: recsNoTool.filter(r => r.toolType === t).length,
       color: TOOL_COLORS[t] || '#888'
     })).filter(x => x.count > 0);
-    toolBreakdownEl.innerHTML = perTool.map(x => `
-      <div class="trainer-stat" style="display:inline-flex;align-items:center;gap:6px">
+    toolBreakdownEl.innerHTML = perTool.map(x => {
+      const active = trainerToolFilter === x.tool;
+      return `
+      <div class="trainer-stat" role="button" tabindex="0" onclick="toggleTrainerToolFilter('${x.tool}')"
+        style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;${active ? `outline:2px solid ${x.color};outline-offset:-1px` : ''}">
         <span style="width:8px;height:8px;border-radius:2px;background:${x.color};display:inline-block"></span>
         ${escapeHTML(x.label)}: <strong>${x.count}</strong>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
 
   // Update trainer months chart title to indicate what period is being shown
@@ -6953,6 +6974,13 @@ function refreshTrainerData() {
   }
 }
 
+// Toggle the per-tool filter on the trainer card. Clicking the active chip clears it.
+function toggleTrainerToolFilter(tool) {
+  trainerToolFilter = (trainerToolFilter === tool) ? '' : tool;
+  drillState['t_chartMonths'] = null; // tool change invalidates any month drill-down
+  refreshTrainerData();
+}
+
 // Switch trainer date filter between single-date and range modes.
 // Mirrors toggleDateRange in the journal — same shape, different IDs.
 function toggleTrainerDateRange(useRange) {
@@ -6989,6 +7017,7 @@ function resetTrainerFilters() {
     single.style.display = 'flex';
   }
   clearChipMulti('t_enterprise', refreshTrainerData);
+  trainerToolFilter = '';
   refreshTrainerData();
 }
 
