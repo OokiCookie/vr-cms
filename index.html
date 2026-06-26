@@ -162,6 +162,12 @@ body {
   gap: 8px;
   font-size: 12px;
   font-family: var(--mono);
+  /* Pin to the true center of the header so it doesn't shift when the tool name (and thus the
+     left group's width) changes. Out of flow, so the left/right groups keep their edges. */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 .file-status {
   display: flex; align-items: center; gap: 6px;
@@ -577,6 +583,7 @@ select option { background: var(--card2); }
   /* On phone, collapse to single column */
   .form-grid-12 { grid-template-columns: 1fr; }
   .header { padding: 0 14px; }
+  .header-file { position: static; transform: none; left: auto; top: auto; } /* avoid overlap on narrow screens */
   .content { padding: 14px; }
 }
 /* REF TABLES */
@@ -733,6 +740,13 @@ select option { background: var(--card2); }
   line-height: 1;
 }
 #groupRowsBody .row-del-btn:hover { color: var(--red); }
+.suggest-fill-btn {
+  font-family: var(--sans); font-size: 11px; font-weight: 600;
+  color: var(--blue); background: transparent;
+  border: 1px solid var(--border2); border-radius: 5px;
+  padding: 1px 7px; cursor: pointer; vertical-align: 1px;
+}
+.suggest-fill-btn:hover { background: var(--card); border-color: var(--blue); }
 /* TRAINERS PAGE */
 .trainers-layout {
   display: grid;
@@ -1639,11 +1653,12 @@ tbody tr:hover td { background: var(--card2); }
         <!-- Row 2: Tab number, Full name, Position -->
         <div class="form-group col-2">
           <label>Табельный *</label>
-          <input type="text" id="f_tab" placeholder="20436482" inputmode="numeric" pattern="[0-9]*" oninput="this.value=this.value.replace(/\D/g,''); checkDuplicate()">
+          <input type="text" id="f_tab" placeholder="20436482" inputmode="numeric" pattern="[0-9]*" oninput="this.value=this.value.replace(/\D/g,''); checkDuplicate(); suggestTabSingle()">
         </div>
         <div class="form-group col-6">
           <label>ФИО *</label>
           <input type="text" id="f_name" placeholder="Иванов Иван Иванович">
+          <div id="tabSuggest" style="display:none;font-size:12px;margin-top:5px"></div>
         </div>
         <div class="form-group col-4">
           <label>Должность</label>
@@ -2076,7 +2091,7 @@ tbody tr:hover td { background: var(--card2); }
         <button class="btn btn-secondary btn-sm" onclick="manualBackupAndRefresh()">+ Создать бэкап вручную</button>
       </div>
       <div style="padding:12px 16px;font-size:12px;color:var(--text3);border-bottom:1px solid var(--border)">
-        Хранится последние ${'<span id="backupsMaxKeep"></span>'} бэкапов. Автоматический бэкап создаётся раз в неделю при первой загрузке приложения.
+        Хранится последние <span id="backupsMaxKeep"></span> бэкапов. Автоматический бэкап создаётся раз в неделю при первой загрузке приложения.
       </div>
       <div class="table-scroll">
         <table>
@@ -2320,6 +2335,13 @@ function toolLabel(t) {
 // ============================================================
 let db = { version: '1.0', lastModified: null, records: [] };
 let baseSnapshot = null;     // snapshot of db at last load/save — used to compute our changes during merge
+let lastFingerprint = null;  // tiny "did anything change?" signature from the last reconciled poll/load.
+                             // null = data is fresh (just loaded/saved); next poll captures a baseline.
+// Per-tool in-memory cache so switching back to an already-opened tool is instant (no reload).
+// tool -> { db, baseSnapshot, fingerprint }. Populated when leaving a tool, restored on return,
+// then verified by one quiet backgroundPoll. Cleared by reloadDB ("Обновить").
+const toolCache = {};
+let summaryCache = null;     // { records, fingerprint } | null — same idea as toolCache, for "Общая сводка"
 let isDirty = false;
 let isSaving = false;        // prevents concurrent saves (e.g. autosave timer firing during manual save)
 let isLoading = false;       // true while loadDB is running — blocks backgroundPoll to prevent duplicate records
@@ -2562,6 +2584,7 @@ async function insertRecord(rec) {
     body: JSON.stringify(recordToDB(rec))
   });
   if (!res.ok) throw new Error('insertRecord HTTP ' + res.status + ': ' + await res.text());
+  crossToolNameIndex = null; // a new record changed the cross-tool name set — rebuild on next use
 }
 
 // Insert multiple records in a single POST. Used for group entry, Excel import, migration.
@@ -2574,6 +2597,7 @@ async function insertRecordsBatch(records) {
     body: JSON.stringify(records.map(recordToDB))
   });
   if (!res.ok) throw new Error('insertRecordsBatch HTTP ' + res.status + ': ' + await res.text());
+  crossToolNameIndex = null; // new records changed the cross-tool name set — rebuild on next use
 }
 
 // Update specific fields of a record. `patch` is in camelCase; converted to snake_case here.
@@ -2600,6 +2624,7 @@ async function updateRecord(id, patch) {
     body: JSON.stringify(snakePatch)
   });
   if (!res.ok) throw new Error('updateRecord HTTP ' + res.status + ': ' + await res.text());
+  crossToolNameIndex = null; // a delete/restore/edit may change the cross-tool name set — rebuild on next use
 }
 
 // Permanently delete one record from the `records` table.
@@ -2903,6 +2928,8 @@ async function loadDB() {
       normalizeFlagJustSet = true;
     }
     baseSnapshot = cloneDB(db);
+    lastFingerprint = null; // set just below from the server, so the cache/poll baseline matches the data we loaded
+    try { lastFingerprint = await fetchFingerprint(); } catch (e) { lastFingerprint = null; }
     isDirty = false;
     setFileStatus('green', 'Сохранено');
     document.getElementById('saveBtn').disabled = true;
@@ -3242,6 +3269,7 @@ async function saveDB(opts = {}) {
     // 6. Update local state to match what we saved
     db = toSave;
     baseSnapshot = cloneDB(toSave);
+    lastFingerprint = null; // our own write bumped updated_at — recapture baseline so the next poll doesn't re-fetch it as a "change"
     isDirty = false;
     document.getElementById('saveBtn').disabled = true;
     setFileStatus('green', 'Сохранено');
@@ -3275,11 +3303,42 @@ async function reloadDB() {
   }
   if (isDirty && !confirm('Есть несохранённые изменения. Перезагрузить из облака? Локальные изменения будут потеряны.')) return;
   await loadDB();
+  for (const k in toolCache) delete toolCache[k]; // manual refresh — force a fresh load of every tool on next visit
+  summaryCache = null;       // and a fresh summary on next entry
+  crossToolNameIndex = null; // rebuild the cross-tool suggestion index on next use
   toast('База перезагружена из облака', 'success');
 }
 
 // Background poll — quietly pull latest cloud version every POLL_INTERVAL ms.
 // Skips if user has unsaved changes (don't clobber their work).
+// Lightweight "did anything change?" check. Returns a tiny signature string built from the
+// newest updated_at + row count of the current tool's records, plus the newest updated_at of
+// the relevant db_state rows (this tool's row + the shared VR row id=1 used for enterprises/
+// flags). Tens of bytes instead of the whole table — the basis for cheap polling.
+async function fetchFingerprint(scope = 'tool') {
+  // scope 'tool' → current tool only; scope 'all' → across all tools (used by summary mode).
+  const recFilter = scope === 'all' ? '' : `tool_type=eq.${currentTool}&`;
+  // records: newest updated_at (1 row) + total count (count=exact returns it in a header).
+  const recRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/records?${recFilter}select=updated_at&order=updated_at.desc&limit=1`,
+    { headers: { ...SB_HEADERS, 'Prefer': 'count=exact' } }
+  );
+  if (!recRes.ok) throw new Error('fingerprint records HTTP ' + recRes.status);
+  const recRows = await recRes.json();
+  const recMax = recRows[0]?.updated_at || '';
+  const recCount = (recRes.headers.get('content-range') || '').split('/')[1] || '';
+  // db_state: all rows for 'all', else this tool's row + shared VR row (id=1). Newest wins.
+  const stFilter = scope === 'all' ? '' : `id=in.(1,${currentDbStateId()})&`;
+  const stRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/db_state?${stFilter}select=updated_at`,
+    { headers: SB_HEADERS }
+  );
+  if (!stRes.ok) throw new Error('fingerprint db_state HTTP ' + stRes.status);
+  const stRows = await stRes.json();
+  const stateMax = stRows.map(r => r.updated_at || '').sort().pop() || '';
+  return `${recMax}|${recCount}|${stateMax}`;
+}
+
 async function backgroundPoll() {
   if (isDirty || isSaving || isLoading || document.hidden) return;
   // In summary mode the background poll exists but doesn't read db_state — there's no
@@ -3292,10 +3351,23 @@ async function backgroundPoll() {
   // applying it to `db` would overwrite the just-loaded data for the new tool.
   const polledTool = currentTool;
   try {
+    // Cheap step: ask the server only "did anything change?" (a tiny fingerprint) instead of
+    // downloading every record. The expensive full fetch below runs ONLY when it differs.
+    const fp = await fetchFingerprint();
+    // Re-check after this short call — conditions may have changed while it was in flight.
+    if (currentTool !== polledTool || summaryMode || isDirty || isSaving) return;
+    // A null baseline means we just loaded/saved and haven't reconciled a fingerprint yet.
+    // Force one full sync so any change that landed between the load and this first check
+    // gets pulled in (a lazy "capture baseline and skip" here would silently swallow it).
+    // Once lastFingerprint is set, the equality check skips all unchanged ticks cheaply.
+    if (lastFingerprint !== null && fp === lastFingerprint) return; // nothing changed remotely — the common case, no download
+
+    // Fingerprint moved → something changed. NOW do the full fetch and adopt it.
     const cloud = await fetchCloudDB();
     // Re-check AFTER the network call. fetchCloudDB can take 1-3 sec; during that window
     // the user may have started typing — isDirty would now be true, but the original guard
     // at function entry already passed. Applying the cloud snapshot would clobber their work.
+    // (Leave lastFingerprint stale here so a later poll re-detects and adopts once it's safe.)
     if (isDirty || isSaving) return;
     // Same idea for tool: if currentTool changed while we were waiting, discard this snapshot.
     if (currentTool !== polledTool) return;
@@ -3304,7 +3376,8 @@ async function backgroundPoll() {
     if (summaryMode) return;
     const cloudStr = JSON.stringify(cloud);
     const baseStr  = baseSnapshot ? JSON.stringify(baseSnapshot) : null;
-    if (cloudStr === baseStr) return; // no remote changes
+    lastFingerprint = fp; // reconciled with this fingerprint either way (own save or colleague's change)
+    if (cloudStr === baseStr) return; // the change was our own save — nothing new to show
     // Remote has newer data — adopt it
     db = cloud;
     baseSnapshot = cloneDB(cloud);
@@ -3445,19 +3518,154 @@ function checkDuplicate() {
   document.getElementById('dupWarning').style.display = dup ? 'flex' : 'none';
 }
 
+// ============================================================
+// TAB-NUMBER → ФИО SUGGESTION
+// Look up the ФИО(s) a tab number was previously recorded under, so the operator reuses the
+// existing spelling instead of retyping it (prevents "Мейрамов"/"Меирамов" drift). If a tab
+// has been recorded under MORE than one distinct name, all variants are surfaced as a
+// conflict — that's the "one tab → two names" problem, caught at entry time.
+// ============================================================
+// Cross-tool name index: tab_number -> [{name, position, tool}] across ALL tools, fetched
+// once per session (slim 4-column query, ~tens of bytes/row). Lets the suggestion reuse a
+// person's existing ФИО even if they were only ever recorded under a different tool. The
+// CURRENT tool is always read from live memory (db.records) instead — see lookupTab — so the
+// cache only ever supplies OTHER tools, and staleness in it can't override fresh local data.
+let crossToolNameIndex = null;      // Map | null (null = not loaded / invalidated)
+let crossToolIndexLoading = false;  // guards against concurrent fetches
+
+async function fetchCrossToolNameIndex() {
+  const map = new Map();
+  let from = 0;
+  for (let page = 0; page < 50; page++) {
+    const to = from + RECORDS_PAGE_SIZE - 1;
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/records?select=tab_number,full_name,position,tool_type&deleted=eq.false&order=id`,
+      { headers: { ...SB_HEADERS, 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
+    );
+    if (!res.ok) throw new Error('cross-tool index HTTP ' + res.status);
+    const rows = await res.json();
+    if (!rows.length) break;
+    rows.forEach(r => {
+      const tab = (r.tab_number || '').trim();
+      const name = normName(r.full_name || '');
+      if (!tab || !name) return;
+      if (!map.has(tab)) map.set(tab, []);
+      map.get(tab).push({ name, position: normName(r.position || ''), tool: r.tool_type || 'vr' });
+    });
+    if (rows.length < RECORDS_PAGE_SIZE) break;
+    from += RECORDS_PAGE_SIZE;
+  }
+  return map;
+}
+
+// Lazily load the cross-tool index (idempotent). Fire-and-forget from the input handlers;
+// when it finishes, refresh any visible single-form suggestion so it gains cross-tool hits.
+async function ensureCrossToolIndex() {
+  if (crossToolNameIndex || crossToolIndexLoading) return;
+  crossToolIndexLoading = true;
+  try {
+    crossToolNameIndex = await fetchCrossToolNameIndex();
+    if (document.getElementById('tab-input')?.classList.contains('active')) suggestTabSingle();
+  } catch (e) {
+    console.warn('cross-tool name index failed:', e.message);
+    crossToolNameIndex = null; // allow a retry on the next interaction
+  } finally {
+    crossToolIndexLoading = false;
+  }
+}
+
+function lookupTab(tab) {
+  // Returns [{name, position}] for distinct names under this tab, most-recent first.
+  if (!tab) return [];
+  const byName = new Map(); // lowercased name -> {name, position, ts}
+  // Current tool: live data, with timestamps for recency ordering.
+  activeRecords().forEach(r => {
+    if (r.tabNumber !== tab) return;
+    const nm = normName(r.fullName);
+    if (!nm) return;
+    const k = nm.toLowerCase();
+    const ts = r.createdAt || r.date || '';
+    const prev = byName.get(k);
+    if (!prev || ts > prev.ts) byName.set(k, { name: nm, position: normName(r.position || ''), ts });
+  });
+  // Other tools: from the session-cached index (no timestamp → sorts after current-tool hits).
+  if (crossToolNameIndex) {
+    (crossToolNameIndex.get(tab) || []).forEach(e => {
+      if (e.tool === currentTool) return; // current tool already covered above, and fresher
+      const k = e.name.toLowerCase();
+      if (!byName.has(k)) byName.set(k, { name: e.name, position: e.position, ts: '' });
+    });
+  }
+  return [...byName.values()].sort((a, b) => b.ts.localeCompare(a.ts)).map(({name, position}) => ({name, position}));
+}
+
+// Render a suggestion chip into `box` for `tab`. Clicking "Заполнить" writes the chosen name
+// into nameInput, and the position into posInput only if posInput is currently empty (don't
+// clobber a position the operator already typed). Shared by the single form and group rows.
+function renderTabSuggest(box, tab, nameInput, posInput) {
+  const matches = lookupTab(tab);
+  if (!matches.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const esc = escapeHTML;
+  const fill = (m) => {
+    nameInput.value = m.name;
+    if (posInput && !posInput.value.trim() && m.position) posInput.value = m.position;
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    box.style.display = 'none';
+  };
+  if (matches.length === 1) {
+    const m = matches[0];
+    const meta = m.position ? ` · ${esc(m.position)}` : '';
+    box.style.display = 'block';
+    box.style.color = 'var(--text2)';
+    box.innerHTML = `В базе: <b style="color:var(--text)">${esc(m.name)}</b>${meta} `
+      + `<button type="button" class="suggest-fill-btn">Заполнить</button>`;
+    box.querySelector('.suggest-fill-btn').addEventListener('click', () => fill(m));
+  } else {
+    box.style.display = 'block';
+    box.style.color = 'var(--orange, #c97a00)';
+    const rows = matches.map((m, i) => {
+      const meta = m.position ? ` <span style="color:var(--text3)">· ${esc(m.position)}</span>` : '';
+      return `<div style="margin-top:3px"><b style="color:var(--text)">${esc(m.name)}</b>${meta} `
+        + `<button type="button" class="suggest-fill-btn" data-i="${i}">Заполнить</button></div>`;
+    }).join('');
+    box.innerHTML = `<i class="ti ti-alert-triangle" style="vertical-align:-1px"></i> Табельный записан под разными ФИО:${rows}`;
+    box.querySelectorAll('.suggest-fill-btn').forEach(btn =>
+      btn.addEventListener('click', () => fill(matches[+btn.dataset.i])));
+  }
+}
+
+// Single-entry form: refresh the chip under the ФИО field from the current tab value.
+function suggestTabSingle() {
+  ensureCrossToolIndex(); // lazy: loads the cross-tool index on first use, then reuses it
+  renderTabSuggest(
+    document.getElementById('tabSuggest'),
+    document.getElementById('f_tab').value.trim(),
+    document.getElementById('f_name'),
+    document.getElementById('f_position')
+  );
+}
+
 function getSelectedMonth() {
   const date = document.getElementById('f_date').value;
   if (!date) return null;
   return MONTHS[new Date(date).getMonth()];
 }
 
+// Default % for the completion field: 100 for the "Прочие тренажёры" tool ('other'), empty
+// for VR / Soldamatic. Always editable — this only pre-fills the field.
+function defaultCompletion() {
+  return currentTool === 'other' ? '100' : '';
+}
+
 function clearForm() {
-  // Note: f_date is excluded — we reset it to today below, not to empty
-  ['f_tab','f_name','f_position','f_course','f_completion','f_instructor']
+  // Note: f_date and f_completion are excluded from the blank loop — set explicitly below.
+  ['f_tab','f_name','f_position','f_course','f_instructor']
     .forEach(id => document.getElementById(id).value = '');
   document.getElementById('f_enterprise').value = '';
   document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('f_completion').value = defaultCompletion();
   document.getElementById('dupWarning').style.display = 'none';
+  document.getElementById('tabSuggest').style.display = 'none';
 }
 
 function onDateChange() { checkDuplicate(); }
@@ -3482,14 +3690,17 @@ function addGroupRow(values) {
   const tbody = document.getElementById('groupRowsBody');
   const tr = document.createElement('tr');
   const v = values || {};
+  // % defaults to the tool-specific value (100 for "Прочие", empty otherwise) when the row
+  // carries no explicit completion — e.g. a manually added participant. A pasted value is kept.
+  const completion = (v.completion !== undefined && v.completion !== '') ? v.completion : defaultCompletion();
   tr.innerHTML = `
     <td><input type="text" class="g-tab mono-input" inputmode="numeric" pattern="[0-9]*"
                value="${escapeHTML(v.tab||'')}"
                oninput="this.value=this.value.replace(/\\D/g,'')"
                placeholder="20436482"></td>
-    <td><input type="text" class="g-name" value="${escapeHTML(v.name||'')}" placeholder="Иванов И. И."></td>
+    <td><input type="text" class="g-name" value="${escapeHTML(v.name||'')}" placeholder="Иванов И. И."><div class="g-suggest" style="display:none;font-size:11px;margin-top:3px"></div></td>
     <td><input type="text" class="g-position" value="${escapeHTML(v.position||'')}" placeholder="Должность"></td>
-    <td><input type="number" class="g-completion mono-input" min="0" max="100" value="${v.completion||''}" placeholder="85"></td>
+    <td><input type="number" class="g-completion mono-input" min="0" max="100" value="${completion}" placeholder="85"></td>
     <td><button class="row-del-btn" onclick="this.closest('tr').remove(); updateGroupCount()" title="Удалить"><i class="ti ti-x"></i></button></td>
   `;
   tbody.appendChild(tr);
@@ -3499,6 +3710,15 @@ function addGroupRow(values) {
   // Paste handler on every field of the row, so multi-column paste works whether the user
   // starts from the tab number, name, or any other column.
   tr.querySelectorAll('input').forEach(inp => inp.addEventListener('paste', handleGroupPaste));
+  // Tab → ФИО suggestion chip for this row.
+  const gTab = tr.querySelector('.g-tab');
+  gTab.addEventListener('input', () => {
+    ensureCrossToolIndex();
+    renderTabSuggest(
+      tr.querySelector('.g-suggest'), gTab.value.trim(),
+      tr.querySelector('.g-name'), tr.querySelector('.g-position')
+    );
+  });
 }
 
 function clearGroupRows() {
@@ -7264,6 +7484,14 @@ async function switchTool(tool) {
   if (!summaryMode && isDirty) {
     try { await saveDB({ silent: true }); } catch (e) { console.warn('Pre-switch save failed:', e); }
   }
+  // Stash the tool we're leaving (now clean) so returning to it is instant — no network reload.
+  if (!summaryMode && db && Array.isArray(db.records)) {
+    toolCache[currentTool] = {
+      db: cloneDB(db),
+      baseSnapshot: baseSnapshot ? cloneDB(baseSnapshot) : null,
+      fingerprint: lastFingerprint
+    };
+  }
   const wasInSummary = summaryMode;
   summaryMode = false;
   summaryRecords = [];
@@ -7273,20 +7501,37 @@ async function switchTool(tool) {
   if (wasInSummary && tool === currentTool) {
     updateToolSwitcherUI();
     refreshAll();
+    setFileStatus('green', 'Сохранено'); // clear the "Общая сводка" label left by summary mode
     pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
     return;
   }
   currentTool = tool;
   localStorage.setItem('vr_current_tool', tool);
   updateToolSwitcherUI();
+  document.getElementById('f_completion').value = defaultCompletion(); // tool-specific %: 100 for "Прочие", empty otherwise
   // Reset selected trainer — it belongs to the previous tool
   if (typeof selectedTrainer !== 'undefined') selectedTrainer = null;
-  try {
-    await loadDB();
-  } finally {
-    // Always restart polling, even if loadDB threw — otherwise the user gets stuck with no
-    // background sync until they refresh the page.
+  const cached = toolCache[tool];
+  if (cached) {
+    // Instant restore from this session's cache — no "Загрузка из облака".
+    db = cloneDB(cached.db);
+    baseSnapshot = cached.baseSnapshot ? cloneDB(cached.baseSnapshot) : null;
+    lastFingerprint = cached.fingerprint;
+    refreshAll();
+    setFileStatus('green', 'Сохранено'); // restore the per-tool status; cache restore skips loadDB which would set it
     pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
+    // One immediate, quiet freshness check: if a colleague changed this tool while we were
+    // away, the fingerprint differs and backgroundPoll pulls the update in the background.
+    backgroundPoll();
+  } else {
+    // First visit to this tool this session — load it once; it joins the cache when we leave.
+    try {
+      await loadDB();
+    } finally {
+      // Always restart polling, even if loadDB threw — otherwise the user gets stuck with no
+      // background sync until they refresh the page.
+      pollTimer = setInterval(backgroundPoll, POLL_INTERVAL);
+    }
   }
 }
 
@@ -7314,7 +7559,26 @@ async function enterSummaryMode() {
   applySummaryModeUI();
   // If user is on a now-hidden tab, fall back to dashboard.
   ensureSummaryAllowedTabActive();
-  await loadSummaryDB();
+  if (summaryCache) {
+    // Instant restore from this session's summary cache — no "Загрузка сводки".
+    summaryRecords = summaryCache.records;
+    setFileStatus('green', `Общая сводка · ${summaryRecords.length} записей`);
+    refreshAll();
+    checkSummaryFreshness(); // quiet: reloads only if cross-tool data changed while away
+  } else {
+    await loadSummaryDB();
+  }
+}
+
+// Quiet background check: if the cross-tool fingerprint moved since the summary was cached,
+// reload it. Otherwise the cached snapshot stays.
+async function checkSummaryFreshness() {
+  try {
+    const fp = await fetchFingerprint('all');
+    if (!summaryMode) return;
+    if (summaryCache && fp === summaryCache.fingerprint) return; // unchanged — keep cache
+    await loadSummaryDB(); // changed → refresh quietly (updates cache + UI)
+  } catch (e) { console.warn('summary freshness check failed:', e.message); }
 }
 
 // Fetch cross-tool records into summaryRecords. Does NOT touch db / db.records.
@@ -7331,6 +7595,8 @@ async function loadSummaryDB() {
         db.hiddenInstructorsSummary = vrRows[0]?.data?.hiddenInstructorsSummary || {};
       }
     } catch (e) { console.warn('Load hiddenInstructorsSummary failed:', e); }
+    try { summaryCache = { records: summaryRecords, fingerprint: await fetchFingerprint('all') }; }
+    catch (e) { summaryCache = null; }
     setFileStatus('green', `Общая сводка · ${summaryRecords.length} записей`);
     refreshAll();
   } catch (e) {
@@ -7395,6 +7661,7 @@ async function startApp() {
   updateAutocompleteLists();
   // Set default date to today
   document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('f_completion').value = defaultCompletion();
   // Wire up the journal enterprise chip-multi filter
   setupChipMulti('filterEnterprise', filterRecords);
   refreshAll();
