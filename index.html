@@ -390,6 +390,7 @@ tbody tr:last-child td { border-bottom: none; }
 .col-4  { grid-column: span 4;  }
 .col-5  { grid-column: span 5;  }
 .col-6  { grid-column: span 6;  }
+.col-8  { grid-column: span 8;  }
 .col-9  { grid-column: span 9;  }
 .col-12 { grid-column: span 12; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
@@ -2138,6 +2139,51 @@ tbody tr:hover td { background: var(--card2); }
   </div>
 </div>
 
+<!-- EDIT RECORD MODAL -->
+<div class="modal-overlay" id="editModalOverlay">
+  <div class="modal" style="width:720px;max-height:90vh;overflow:auto">
+    <h2><i class="ti ti-pencil" style="vertical-align:-2px;margin-right:6px"></i>Редактировать запись</h2>
+    <div class="form-grid-12" style="margin-top:16px">
+      <div class="form-group col-3">
+        <label>Дата обучения *</label>
+        <input type="date" id="e_date">
+      </div>
+      <div class="form-group col-5">
+        <label>Предприятие *</label>
+        <input type="text" id="e_enterprise" list="list_enterprises" autocomplete="off">
+      </div>
+      <div class="form-group col-4">
+        <label>Инструктор</label>
+        <input type="text" id="e_instructor" list="list_instructors" autocomplete="off">
+      </div>
+      <div class="form-group col-2">
+        <label>Табельный *</label>
+        <input type="text" id="e_tab" inputmode="numeric" pattern="[0-9]*" oninput="this.value=this.value.replace(/\D/g,'')">
+      </div>
+      <div class="form-group col-6">
+        <label>ФИО *</label>
+        <input type="text" id="e_name">
+      </div>
+      <div class="form-group col-4">
+        <label>Должность</label>
+        <input type="text" id="e_position" autocomplete="off">
+      </div>
+      <div class="form-group col-8">
+        <label>Курс обучения *</label>
+        <input type="text" id="e_course" list="list_courses" autocomplete="off">
+      </div>
+      <div class="form-group col-4">
+        <label>% прохождения курса</label>
+        <input type="number" id="e_completion" min="0" max="100">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeEditModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveEditRecord()"><i class="ti ti-check"></i> Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- PDF SETTINGS MODAL -->
 <div class="modal-overlay" id="pdfModalOverlay">
   <div class="modal" style="width:540px">
@@ -3509,6 +3555,70 @@ function deleteSelected() {
   });
 }
 
+// ID of the record currently open in the edit modal (null when modal is closed).
+let editingRecordId = null;
+
+function openEditModal(id) {
+  const r = db.records.find(x => x.id === id);
+  if (!r) return;
+  editingRecordId = id;
+  document.getElementById('e_date').value = r.date || '';
+  document.getElementById('e_enterprise').value = r.enterprise || '';
+  document.getElementById('e_instructor').value = r.instructor || '';
+  document.getElementById('e_tab').value = r.tabNumber || '';
+  document.getElementById('e_name').value = r.fullName || '';
+  document.getElementById('e_position').value = r.position || '';
+  document.getElementById('e_course').value = r.course || '';
+  document.getElementById('e_completion').value = (r.completion ?? '');
+  document.getElementById('editModalOverlay').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('editModalOverlay').classList.remove('open');
+  editingRecordId = null;
+}
+
+async function saveEditRecord() {
+  if (!editingRecordId) return;
+  const rec = db.records.find(x => x.id === editingRecordId);
+  if (!rec) { closeEditModal(); return; }
+
+  // Same normalization + validation as addRecord, so edits can't introduce invalid
+  // or whitespace-variant values that addRecord would have rejected.
+  const date = document.getElementById('e_date').value;
+  const enterprise = normName(document.getElementById('e_enterprise').value);
+  const tab = document.getElementById('e_tab').value.trim();
+  const name = normName(document.getElementById('e_name').value);
+  const position = normName(document.getElementById('e_position').value);
+  const course = normName(document.getElementById('e_course').value);
+  const completion = parseInt(document.getElementById('e_completion').value) || 0;
+  const instructor = normName(document.getElementById('e_instructor').value);
+
+  if (!date) { toast('Укажите дату обучения', 'error'); return; }
+  if (!enterprise) { toast('Укажите предприятие', 'error'); return; }
+  if (!tab) { toast('Укажите табельный номер', 'error'); return; }
+  if (!name) { toast('Укажите ФИО', 'error'); return; }
+  if (!course) { toast('Укажите курс обучения', 'error'); return; }
+
+  // Date may have changed → recompute month (it's derived, same as addRecord).
+  const month = MONTHS[new Date(date).getMonth()];
+  const patch = { date, month, enterprise, tabNumber: tab, fullName: name, position, course, completion, instructor };
+
+  try {
+    await updateRecord(editingRecordId, patch);
+  } catch (e) {
+    toast('Ошибка сохранения: ' + e.message, 'error');
+    return;
+  }
+
+  Object.assign(rec, patch);
+  syncBaseSnapshotRecords();
+  updateAutocompleteLists();
+  refreshAll();
+  closeEditModal();
+  toast('Запись обновлена', 'success');
+}
+
 function checkDuplicate() {
   const tab = document.getElementById('f_tab').value.trim();
   const course = document.getElementById('f_course').value.trim();
@@ -4552,7 +4662,10 @@ function renderJournal() {
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHTML(r.course||'')}">${escapeHTML(r.course||'')}</td>
       <td><span class="badge ${badgeClass}">${pct}%</span></td>
       <td class="mono" style="font-size:11px;color:var(--text2)">${escapeHTML(r.instructor||'—')}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')"><i class="ti ti-x"></i></button></td>
+      <td><div style="display:flex;gap:6px">
+        <button class="btn btn-secondary btn-sm" onclick="openEditModal('${r.id}')" title="Редактировать"><i class="ti ti-pencil"></i></button>
+        <button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.id}')" title="Удалить"><i class="ti ti-x"></i></button>
+      </div></td>
     </tr>`;
   }).join('');
 
@@ -5340,6 +5453,9 @@ function closeModal() { document.getElementById('modalOverlay').classList.remove
 // Close modal on overlay click
 document.getElementById('modalOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
+});
+document.getElementById('editModalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeEditModal();
 });
 
 // ============================================================
