@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.5.0/dist/tabler-icons.min.css">
 <style>
@@ -261,6 +261,10 @@ body {
 }
 .admin-sub-tab:hover { color: var(--text); }
 .admin-sub-tab.active { color: var(--blue2); border-bottom-color: var(--blue2) !important; }
+.admin-tool-switch { display:flex; align-items:center; gap:6px; margin:12px 0 4px; }
+.admin-tool-btn { font-size:12px; padding:4px 12px; border:1px solid var(--border); background:transparent; color:var(--text2); border-radius:6px; cursor:pointer; }
+.admin-tool-btn:hover { color: var(--text); }
+.admin-tool-btn.active { background: var(--blue2); color:#fff; border-color: var(--blue2); }
 /* LAYOUT */
 .content { padding: 24px; }
 .tab-pane { display: none; }
@@ -1543,8 +1547,8 @@ tbody tr:hover td { background: var(--card2); }
   <div class="nav-tab" onclick="switchTab('trash', this)">
     <i class="ti ti-trash"></i> Корзина <span class="tab-count" id="trashCount">0</span>
   </div>
-  <!-- Admin gear — pinned to the right side of the nav. Houses Refs/Export/History as sub-tabs. -->
-  <div class="nav-tab" id="adminGearTab" onclick="switchTab('admin', this)" style="margin-left:auto;padding:13px 16px" title="Админка: Справочники, Экспорт, История">
+  <!-- Admin entry — lives inside «Общая сводка». Shown only in summary mode (or while an admin pane is open); hidden in per-tool modes. -->
+  <div class="nav-tab" id="adminGearTab" onclick="switchTab('admin', this)" style="margin-left:auto;display:none;padding:13px 16px" title="Админка: Справочники, Экспорт, История">
     <i class="ti ti-settings" style="font-size:18px"></i>
   </div>
 </div>
@@ -1926,6 +1930,12 @@ tbody tr:hover td { background: var(--card2); }
       <div class="admin-sub-tab" data-admin="export" onclick="setAdminSubTab('export', this)"><i class="ti ti-arrow-bar-to-down"></i> Экспорт / Импорт</div>
       <div class="admin-sub-tab" data-admin="history" onclick="setAdminSubTab('history', this)"><i class="ti ti-history"></i> История</div>
     </div>
+    <div class="admin-tool-switch">
+      <span style="font-size:12px;color:var(--text3);margin-right:2px">Инструмент:</span>
+      <button class="admin-tool-btn" data-atool="vr" onclick="adminSwitchTool('vr','refs')">VR</button>
+      <button class="admin-tool-btn" data-atool="welder" onclick="adminSwitchTool('welder','refs')">Soldamatic</button>
+      <button class="admin-tool-btn" data-atool="other" onclick="adminSwitchTool('other','refs')">Прочие</button>
+    </div>
     <div class="section-header">
       <div class="section-title">Справочники</div>
       <div style="font-size:12px;color:var(--text2)">Изменения сразу применяются ко всем записям в базе</div>
@@ -1988,6 +1998,12 @@ tbody tr:hover td { background: var(--card2); }
       <div class="admin-sub-tab" data-admin="export" onclick="setAdminSubTab('export', this)"><i class="ti ti-arrow-bar-to-down"></i> Экспорт / Импорт</div>
       <div class="admin-sub-tab" data-admin="history" onclick="setAdminSubTab('history', this)"><i class="ti ti-history"></i> История</div>
     </div>
+    <div class="admin-tool-switch">
+      <span style="font-size:12px;color:var(--text3);margin-right:2px">Инструмент:</span>
+      <button class="admin-tool-btn" data-atool="vr" onclick="adminSwitchTool('vr','history')">VR</button>
+      <button class="admin-tool-btn" data-atool="welder" onclick="adminSwitchTool('welder','history')">Soldamatic</button>
+      <button class="admin-tool-btn" data-atool="other" onclick="adminSwitchTool('other','history')">Прочие</button>
+    </div>
     <div class="section-header">
       <div class="section-title">История изменений</div>
       <div style="font-size:12px;color:var(--text2)">Записи старше 30 дней удаляются автоматически</div>
@@ -2037,53 +2053,25 @@ tbody tr:hover td { background: var(--card2); }
       <div class="section-title">Экспорт и Импорт данных</div>
     </div>
     <div class="export-grid">
-      <div class="export-card">
-        <div class="export-icon"><i class="ti ti-file-spreadsheet"></i></div>
-        <h3>Экспорт в Excel (.xlsx)</h3>
-        <p>Экспортирует все записи в формате Excel — как оригинальный «Обученные VR по площадкам», с листами по месяцам.</p>
-        <button class="btn btn-primary" onclick="exportExcelFull()">⬇ Скачать Excel</button>
+      <div class="export-card" onclick="openAdminActionModal('export')" style="cursor:pointer">
+        <div class="export-icon"><i class="ti ti-file-export"></i></div>
+        <h3>Экспорт</h3>
+        <p>Выгрузка в Excel: «По месяцам» или «Факт обучения».</p>
       </div>
-      <div class="export-card">
-        <div class="export-icon"><i class="ti ti-clipboard-data"></i></div>
-        <h3>Сводка «Факт обучения»</h3>
-        <p>Сводная таблица по предприятиям × курсам × месяцам — формат третьего документа «Факт обучения VR».</p>
-        <button class="btn btn-primary" onclick="exportSummaryExcel()">⬇ Сводка Excel</button>
+      <div class="export-card" onclick="openAdminActionModal('import')" style="cursor:pointer">
+        <div class="export-icon"><i class="ti ti-file-import"></i></div>
+        <h3>Импорт</h3>
+        <p>Загрузка данных из JSON или Excel — добавляется к текущей базе.</p>
       </div>
-      <div class="export-card">
-        <div class="export-icon"><i class="ti ti-database-export"></i></div>
-        <h3>Резервная копия (JSON)</h3>
-        <p>Сохраняет всю базу данных в JSON-файл. Используйте для резервного копирования или переноса данных между компьютерами.</p>
-        <button class="btn btn-secondary" onclick="exportJSON()">⬇ Скачать JSON</button>
-      </div>
-      <div class="export-card">
-        <div class="export-icon"><i class="ti ti-folder-open"></i></div>
-        <h3>Импорт из JSON</h3>
-        <p>Загрузите ранее сохранённый JSON-файл. Данные будут <strong>добавлены</strong> к текущим (дубликаты исключаются по ID).</p>
-        <label class="btn btn-secondary" style="cursor:pointer">
-          ⬆ Выбрать JSON
-          <input type="file" accept=".json" style="display:none" onchange="importJSON(event)">
-        </label>
-      </div>
-      <div class="export-card">
-        <div class="export-icon"><i class="ti ti-table-import"></i></div>
-        <h3>Импорт из Excel</h3>
-        <p>Загрузите Excel-файл в формате «Результаты обучения» (первый документ). Данные будут добавлены к текущей базе.</p>
-        <label class="btn btn-secondary" style="cursor:pointer">
-          ⬆ Выбрать XLSX
-          <input type="file" accept=".xlsx,.xls" style="display:none" onchange="importExcel(event)">
-        </label>
-      </div>
-      <div class="export-card">
-        <div class="export-icon"><i class="ti ti-trash"></i></div>
-        <h3>Очистить журнал</h3>
-        <p>Удаляет <strong>все записи обучения</strong> из журнала. Справочники, тренеры, QR-коды и группы курсов сохраняются. Перед очисткой автоматически создаётся бэкап в облаке.</p>
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:10px;cursor:pointer">
-          <input type="checkbox" id="dangerToggle" onchange="document.getElementById('dangerClearBtn').style.display = this.checked ? 'inline-flex' : 'none'">
-          Показать опасные действия
-        </label>
-        <button class="btn btn-danger" id="dangerClearBtn" onclick="openClearDBModal()" style="display:none"><i class="ti ti-alert-triangle"></i> Очистить журнал</button>
+      <div class="export-card" onclick="openAdminActionModal('backup')" style="cursor:pointer">
+        <div class="export-icon"><i class="ti ti-database"></i></div>
+        <h3>Бэкап</h3>
+        <p>Резервная копия базы (JSON) или очистка журнала.</p>
       </div>
     </div>
+    <!-- Hidden file inputs triggered from the Import chooser modal -->
+    <input type="file" id="importJsonInput" accept=".json" style="display:none" onchange="importJSON(event)">
+    <input type="file" id="importXlsxInput" accept=".xlsx,.xls" style="display:none" onchange="importExcel(event)">
 
     <!-- Backups list -->
     <div class="table-wrap" style="margin-top:20px">
@@ -2135,6 +2123,29 @@ tbody tr:hover td { background: var(--card2); }
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
       <button class="btn btn-danger" id="modalConfirmBtn">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN ACTION CHOOSER (Экспорт / Импорт / Бэкап) -->
+<div class="modal-overlay" id="adminActionOverlay">
+  <div class="modal" style="max-width:360px">
+    <h2 id="adminActionTitle"></h2>
+    <div id="adminActionButtons" style="display:flex;flex-direction:column;gap:10px;margin:16px 0"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeAdminActionModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT FILTER (тренажёр × год → отдельные листы) — opens on top of the chooser -->
+<div class="modal-overlay" id="reportFilterOverlay" style="z-index:1001">
+  <div class="modal" style="max-width:440px">
+    <h2 id="reportFilterTitle"></h2>
+    <div id="reportFilterBody" style="margin:14px 0"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeReportFilterModal()">Закрыть</button>
+      <button class="btn btn-primary" onclick="runReportExport()">Выгрузить</button>
     </div>
   </div>
 </div>
@@ -5007,62 +5018,157 @@ function exportJSON() {
   toast('JSON резервная копия скачана', 'success');
 }
 
-function exportExcelFull() {
+// Build one flat sheet (список записей) for a set of records — used by the «По месяцам» report.
+// Records passed in already belong to a single tool+year; caller names the sheet.
+function buildMonthlySheet(recs) {
+  const data = [['№','Предприятие','Табельный №','ФИО','Должность/профессия','Курс обучения','Дата обучения','Месяц','% прохождения','Инструктор']];
+  recs.slice().sort((a,b) => (a.date||'').localeCompare(b.date||''))
+    .forEach((r,i) => data.push([i+1, r.enterprise, r.tabNumber, r.fullName, r.position, r.course, r.date, monthFromDate(r), r.completion, r.instructor]));
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [5,14,12,24,24,28,12,11,8,16].map(w=>({wch:w}));
+  ws['!autofilter'] = { ref: ws['!ref'] }; // enables month/enterprise/course filtering inside Excel
+  return ws;
+}
+
+// Build one «Факт обучения» matrix sheet (enterprise × course × month + totals + course summary)
+// for a set of records that all belong to a single tool+year. Caller names the sheet.
+function buildFactSheet(recs) {
+  const GREEN = { patternType:'solid', fgColor:{ rgb:'FF92D050' } }; // grand total row
+  const BLUE  = { patternType:'solid', fgColor:{ rgb:'FFDDEBF7' } }; // enterprise subtotal / summary title
+  const styleCell = (ws, r, c, s) => {
+    const addr = XLSX.utils.encode_cell({ r, c });
+    if (!ws[addr]) ws[addr] = { t:'s', v:'' };
+    ws[addr].s = Object.assign({}, ws[addr].s, s);
+  };
+  const header = ['Предприятие','Вид обучения','Итого обучено',...MONTHS];
+
+  // enterprise × course × month matrix
+  const matrix = {};
+  recs.forEach(r => {
+    const m = monthFromDate(r);
+    if (!m) return;
+    if (!matrix[r.enterprise]) matrix[r.enterprise] = {};
+    if (!matrix[r.enterprise][r.course]) matrix[r.enterprise][r.course] = {};
+    matrix[r.enterprise][r.course][m] = (matrix[r.enterprise][r.course][m]||0)+1;
+  });
+
+  const rows = [header];
+  const grandRowIdx = rows.length;                 // = 1
+  rows.push([]);                                   // grand total row, filled after the loop
+  const grandMonths = new Array(12).fill(0);
+  let grandTotal = 0;
+  const entMerges = [];
+  const courseTotals = {};
+
+  Object.entries(matrix).forEach(([ent, courses]) => {
+    const subRowIdx = rows.length;
+    const entMonths = new Array(12).fill(0);
+    let entTotal = 0;
+    const courseRows = [];
+    Object.entries(courses).forEach(([course, months]) => {
+      const mArr = MONTHS.map((m,i) => {
+        const v = months[m] || 0;
+        entMonths[i] += v; grandMonths[i] += v;
+        return v || '';
+      });
+      const total = Object.values(months).reduce((a,b)=>a+b,0);
+      entTotal += total;
+      courseTotals[course] = (courseTotals[course]||0) + total;
+      courseRows.push([ent, course, total, ...mArr]);
+    });
+    grandTotal += entTotal;
+    rows.push([ent, '', entTotal, ...entMonths]);
+    courseRows.forEach(cr => rows.push(cr));
+    entMerges.push([subRowIdx, rows.length - 1]);
+  });
+
+  rows[grandRowIdx] = ['Всего обучено', '', grandTotal, ...grandMonths];
+
+  rows.push(new Array(header.length).fill(''));     // blank spacer
+  const summaryTitleIdx = rows.length;
+  rows.push(['', 'Сводка по курсам за год', '']);
+  Object.entries(courseTotals)
+    .filter(([,t]) => t > 0)
+    .sort((a,b) => b[1]-a[1])
+    .forEach(([course,t]) => rows.push(['', course, t]));
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [20,36,8,...Array(12).fill(8)].map(w=>({wch:w}));
+
+  const merges = [{ s:{r:grandRowIdx,c:0}, e:{r:grandRowIdx,c:1} }];
+  entMerges.forEach(([a,b]) => merges.push({ s:{r:a,c:0}, e:{r:b,c:0} }));
+  merges.push({ s:{r:summaryTitleIdx,c:1}, e:{r:summaryTitleIdx,c:2} });
+  ws['!merges'] = merges;
+
+  for (let c=0; c<header.length; c++) styleCell(ws, 0, c, { font:{bold:true} });
+  for (let c=0; c<header.length; c++) styleCell(ws, grandRowIdx, c, { fill:GREEN });
+  styleCell(ws, grandRowIdx, 0, { fill:GREEN, alignment:{ vertical:'center', horizontal:'right' } });
+  entMerges.forEach(([a]) => {
+    for (let c=1; c<header.length; c++) styleCell(ws, a, c, { fill:BLUE });
+    styleCell(ws, a, 0, { alignment:{ vertical:'center', horizontal:'center' } });
+  });
+  styleCell(ws, summaryTitleIdx, 1, { fill:BLUE, font:{bold:true} });
+  styleCell(ws, summaryTitleIdx, 2, { fill:BLUE });
+  return ws;
+}
+
+// ---- Report filter modal (тренажёр × год → отдельные листы) ----
+let reportFilterRecords = [];   // cross-tool records cached when the modal opens
+let reportFilterType = '';      // 'monthly' | 'fact'
+
+async function openReportFilterModal(type) {
+  reportFilterType = type;
+  document.getElementById('reportFilterTitle').textContent =
+    type === 'fact' ? 'Экспорт «Факт обучения»' : 'Экспорт «По месяцам»';
+  const body = document.getElementById('reportFilterBody');
+  body.innerHTML = '<div style="color:var(--text3);padding:12px 0">Загрузка данных…</div>';
+  document.getElementById('reportFilterOverlay').classList.add('open');
+  try {
+    reportFilterRecords = (await fetchAllRecordsAcrossTools()).filter(r => !r.deleted);
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--red);padding:12px 0">Ошибка загрузки: ' + e.message + '</div>';
+    return;
+  }
+  const years = [...new Set(reportFilterRecords.map(recordYear).filter(Boolean))].sort();
+  const toolBoxes = TOOL_ORDER.map(t =>
+    `<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0">
+       <input type="checkbox" class="rf-tool" value="${t}" checked> ${TOOL_TYPES[t].short}</label>`).join('');
+  const yearBoxes = years.length
+    ? years.map(y =>
+        `<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0">
+           <input type="checkbox" class="rf-year" value="${y}" checked> ${y}</label>`).join('')
+    : '<span style="color:var(--text3)">нет данных</span>';
+  body.innerHTML =
+    `<div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:6px">Тренажёр</div>${toolBoxes}</div>
+     <div><div style="font-size:12px;color:var(--text2);margin-bottom:6px">Год</div>${yearBoxes}</div>`;
+}
+
+function runReportExport() {
   if (!window.XLSX) { toast('SheetJS не загружен', 'error'); return; }
+  const tools = [...document.querySelectorAll('.rf-tool:checked')].map(c => c.value);
+  const years = [...document.querySelectorAll('.rf-year:checked')].map(c => c.value);
+  if (!tools.length || !years.length) { toast('Выберите тренажёр и год', 'error'); return; }
   const wb = XLSX.utils.book_new();
-  const byMonth = {};
-  activeRecords().forEach(r => {
-    const m = monthFromDate(r) || 'Без месяца';
-    if (!byMonth[m]) byMonth[m] = [];
-    byMonth[m].push(r);
+  // One sheet per non-empty тренажёр × год pair.
+  tools.forEach(tool => {
+    years.forEach(year => {
+      const recs = reportFilterRecords.filter(r => (r.toolType || 'vr') === tool && recordYear(r) === year);
+      if (!recs.length) return;
+      const ws = reportFilterType === 'fact' ? buildFactSheet(recs) : buildMonthlySheet(recs);
+      XLSX.utils.book_append_sheet(wb, ws, `${TOOL_TYPES[tool].short} ${year}`);
+    });
   });
-  MONTHS.forEach(month => {
-    const recs = byMonth[month];
-    if (!recs || !recs.length) return;
-    const data = [['№','Предприятие','Табельный №','ФИО','Должность/профессия','Курс обучения','Дата обучения','% прохождения','Инструктор']];
-    recs.forEach((r,i) => data.push([i+1,r.enterprise,r.tabNumber,r.fullName,r.position,r.course,r.date,r.completion,r.instructor]));
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    ws['!cols'] = [5,14,12,24,24,28,12,8,16].map(w=>({wch:w}));
-    XLSX.utils.book_append_sheet(wb, ws, month);
-  });
-  if (wb.SheetNames.length === 0) { toast('Нет данных для экспорта', 'error'); return; }
-  XLSX.writeFile(wb, `Обученные_${exportSlugSafe()}_по_площадкам.xlsx`);
+  if (!wb.SheetNames.length) { toast('Нет данных по выбранным фильтрам', 'error'); return; }
+  const base = reportFilterType === 'fact' ? 'Факт_обучения' : 'Обученные_по_месяцам';
+  XLSX.writeFile(wb, `${base}_${exportSlugSafe()}.xlsx`);
+  closeReportFilterModal();
   toast('Excel файл скачан', 'success');
 }
 
-function exportSummaryExcel() {
-  if (!window.XLSX) { toast('SheetJS не загружен', 'error'); return; }
-  // Build enterprise × course × month matrix
-  const matrix = {};
-  activeRecords().forEach(r => {
-    if (!matrix[r.enterprise]) matrix[r.enterprise] = {};
-    if (!matrix[r.enterprise][r.course]) matrix[r.enterprise][r.course] = {};
-    const m = monthFromDate(r);
-    if (!m) return;
-    matrix[r.enterprise][r.course][m] = (matrix[r.enterprise][r.course][m]||0)+1;
-  });
-  const header = ['Предприятие','Вид обучения','Итого обучено',...MONTHS];
-  const rows = [header];
-  Object.entries(matrix).forEach(([ent, courses]) => {
-    let entTotal = 0;
-    const entMonths = new Array(12).fill(0);
-    Object.entries(courses).forEach(([course, months]) => {
-      const total = Object.values(months).reduce((a,b)=>a+b,0);
-      entTotal += total;
-      const mArr = MONTHS.map((m,i) => { entMonths[i]+=(months[m]||0); return months[m]||''; });
-      rows.push([ent, course, total, ...mArr]);
-    });
-    rows.splice(rows.findIndex(r=>r[0]===ent), 0, [ent,'',entTotal,...entMonths]);
-  });
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [20,36,8,...Array(12).fill(8)].map(w=>({wch:w}));
-  const wb = XLSX.utils.book_new();
-  // Sheet name carries the current year so files generated in a new year don't keep saying "2026"
-  const sheetYear = new Date().getFullYear();
-  XLSX.utils.book_append_sheet(wb, ws, `Факт ${sheetYear}`);
-  XLSX.writeFile(wb, `Факт_обучения_${exportSlugSafe()}.xlsx`);
-  toast('Сводный Excel скачан', 'success');
-}
+function closeReportFilterModal() { document.getElementById('reportFilterOverlay').classList.remove('open'); }
+document.getElementById('reportFilterOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeReportFilterModal();
+});
 
 function showImportProgress(label, pct) {
   const p = document.getElementById('importPreview');
@@ -5411,6 +5517,9 @@ function switchTab(name, el) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (el) el.classList.add('active');
+  // Admin entry shows only in summary or while an admin pane is active; leaving admin hides it.
+  const gearTab = document.getElementById('adminGearTab');
+  if (gearTab && !summaryMode) gearTab.style.display = isAdminPaneActive() ? '' : 'none';
   if (name === 'journal') filterRecords();
   if (name === 'trainers') renderTrainersList();
   if (name === 'qrcourses') { renderQRCoursesList(); renderQRCourseDetail(); }
@@ -5428,7 +5537,7 @@ function setAdminSubTab(name) {
   // Keep the gear icon highlighted in the top nav (it's the entry point for admin)
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   const gear = document.getElementById('adminGearTab');
-  if (gear) gear.classList.add('active');
+  if (gear) { gear.classList.add('active'); gear.style.display = ''; } // keep the admin entry visible while inside admin
   // Activate target pane
   const pane = document.getElementById('tab-' + name);
   if (pane) pane.classList.add('active');
@@ -5436,11 +5545,67 @@ function setAdminSubTab(name) {
   document.querySelectorAll('.admin-sub-tab').forEach(t => {
     t.classList.toggle('active', t.getAttribute('data-admin') === name);
   });
+  // Reflect which tool's data is currently shown in the VR/Soldamatic/Прочие switcher
+  updateAdminToolButtons(currentTool);
   // Render hook for the selected sub-tab
   if (name === 'refs') renderRefs();
   if (name === 'export') renderBackupsList();
   if (name === 'history') loadHistory();
 }
+
+// True when one of the admin panes (Справочники / Экспорт / История) is the active tab.
+function isAdminPaneActive() {
+  const p = document.querySelector('.tab-pane.active');
+  return !!p && ['tab-refs', 'tab-export', 'tab-history'].includes(p.id);
+}
+
+// Highlight the active tool in the VR/Soldamatic/Прочие switcher (present in Справочники & История).
+function updateAdminToolButtons(tool) {
+  document.querySelectorAll('.admin-tool-btn').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('data-atool') === tool));
+}
+
+// Switcher inside Справочники/История: load a real tool (this exits read-only summary mode and
+// reuses all the existing, tested per-tool read/write paths), then stay on the same admin sub-tab.
+async function adminSwitchTool(tool, sub) {
+  await switchTool(tool);
+  setAdminSubTab(sub);
+}
+
+// ---- Экспорт / Импорт / Бэкап chooser ----
+const ADMIN_ACTIONS = {
+  export: { title: 'Экспорт', items: [
+    ['По месяцам', () => openReportFilterModal('monthly')],
+    ['Факт обучения', () => openReportFilterModal('fact')],
+  ]},
+  import: { title: 'Импорт', items: [
+    ['JSON', () => document.getElementById('importJsonInput').click()],
+    ['Excel', () => document.getElementById('importXlsxInput').click()],
+  ]},
+  backup: { title: 'Бэкап', items: [
+    ['Резервная копия (JSON)', () => exportJSON()],
+    ['Очищение базы', () => openClearDBModal()],
+  ]},
+};
+function openAdminActionModal(kind) {
+  const cfg = ADMIN_ACTIONS[kind];
+  if (!cfg) return;
+  document.getElementById('adminActionTitle').textContent = cfg.title;
+  const box = document.getElementById('adminActionButtons');
+  box.innerHTML = '';
+  cfg.items.forEach(([label, fn]) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-primary';
+    b.textContent = label;
+    b.onclick = () => { closeAdminActionModal(); fn(); };
+    box.appendChild(b);
+  });
+  document.getElementById('adminActionOverlay').classList.add('open');
+}
+function closeAdminActionModal() { document.getElementById('adminActionOverlay').classList.remove('open'); }
+document.getElementById('adminActionOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeAdminActionModal();
+});
 
 function showModal(title, text, onConfirm) {
   document.getElementById('modalTitle').textContent = title;
@@ -6739,9 +6904,6 @@ async function confirmClearDB() {
   syncBaseSnapshotRecords();
   refreshAll();
   closeClearDBModal();
-  // Reset the danger toggle so the button hides itself again
-  const tog = document.getElementById('dangerToggle');
-  if (tog) { tog.checked = false; document.getElementById('dangerClearBtn').style.display = 'none'; }
   toast('Журнал очищен. Бэкап доступен для восстановления.', 'success');
   renderBackupsList();
 }
@@ -7735,9 +7897,10 @@ function applySummaryModeUI() {
       t.style.display = summaryMode ? 'none' : '';
     }
   });
-  // Admin gear (refs/export/history) — hidden in summary
+  // Admin entry (refs/export/history) now lives inside «Общая сводка»: shown in summary,
+  // or while an admin pane is open (e.g. after the Справочники switcher loaded a tool).
   const gear = document.getElementById('adminGearTab');
-  if (gear) gear.style.display = summaryMode ? 'none' : '';
+  if (gear) gear.style.display = (summaryMode || isAdminPaneActive()) ? '' : 'none';
   // Save button — hidden in summary (no writes possible)
   const saveBtn = document.getElementById('saveBtn');
   if (saveBtn) saveBtn.style.display = summaryMode ? 'none' : '';
@@ -7749,7 +7912,7 @@ function applySummaryModeUI() {
 // If summary mode hides the currently-active tab, switch to dashboard.
 function ensureSummaryAllowedTabActive() {
   if (!summaryMode) return;
-  const allowed = new Set(['dashboard', 'trainers']);
+  const allowed = new Set(['dashboard', 'trainers', 'refs', 'export', 'history']);
   const activePane = document.querySelector('.tab-pane.active');
   const activeId = activePane ? activePane.id.replace('tab-', '') : '';
   if (!allowed.has(activeId)) {
