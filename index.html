@@ -2049,6 +2049,12 @@ tbody tr:hover td { background: var(--card2); }
       <div class="admin-sub-tab" data-admin="export" onclick="setAdminSubTab('export', this)"><i class="ti ti-arrow-bar-to-down"></i> Экспорт / Импорт</div>
       <div class="admin-sub-tab" data-admin="history" onclick="setAdminSubTab('history', this)"><i class="ti ti-history"></i> История</div>
     </div>
+    <div class="admin-tool-switch">
+      <span style="font-size:12px;color:var(--text3);margin-right:2px">Инструмент:</span>
+      <button class="admin-tool-btn" data-atool="vr" onclick="adminSwitchTool('vr','export')">VR</button>
+      <button class="admin-tool-btn" data-atool="welder" onclick="adminSwitchTool('welder','export')">Soldamatic</button>
+      <button class="admin-tool-btn" data-atool="other" onclick="adminSwitchTool('other','export')">Прочие</button>
+    </div>
     <div class="section-header">
       <div class="section-title">Экспорт и Импорт данных</div>
     </div>
@@ -2062,6 +2068,7 @@ tbody tr:hover td { background: var(--card2); }
         <div class="export-icon"><i class="ti ti-file-import"></i></div>
         <h3>Импорт</h3>
         <p>Загрузка данных из JSON или Excel — добавляется к текущей базе.</p>
+        <p style="margin-top:6px;font-size:12px;color:var(--text3)">Импорт в тренажёр: <strong id="importTargetTool" style="color:var(--text2)"></strong></p>
       </div>
       <div class="export-card" onclick="openAdminActionModal('backup')" style="cursor:pointer">
         <div class="export-icon"><i class="ti ti-database"></i></div>
@@ -5549,7 +5556,11 @@ function setAdminSubTab(name) {
   updateAdminToolButtons(currentTool);
   // Render hook for the selected sub-tab
   if (name === 'refs') renderRefs();
-  if (name === 'export') renderBackupsList();
+  if (name === 'export') {
+    renderBackupsList();
+    const importTargetEl = document.getElementById('importTargetTool');
+    if (importTargetEl) importTargetEl.textContent = TOOL_TYPES[currentTool].short;
+  }
   if (name === 'history') loadHistory();
 }
 
